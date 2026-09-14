@@ -27,6 +27,9 @@ dev = [
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "config.settings.test"
 python_files = ["test_*.py"]
+markers = [
+    "journey: complete role-facing HTTP workflows backed by PostgreSQL",
+]
 
 [tool.coverage.run]
 branch = true

@@ -84,9 +84,9 @@ make ci
 by GitHub Actions. `make validate` checks migration consistency and Django configuration,
 verifies Ruff formatting and linting, runs strict mypy, executes the complete test suite against
 embedded PostgreSQL, and rejects changed Python code below 90% coverage. The test suite includes
-unit, PostgreSQL integration, and role-facing journey tests without production services or
-credentials. Changed-code coverage compares with `origin/main` by default; use another merge
-base when needed:
+unit and PostgreSQL integration tests plus marked role-facing journeys without production
+services or credentials. Changed-code coverage compares with `origin/main` by default; use
+another merge base when needed:
 
 ```sh
 make changed-coverage BASE_BRANCH=origin/your-base-branch
