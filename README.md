@@ -17,20 +17,16 @@ access, password, or remote connection.
 
 ```sh
 uv sync
-uv run python -m tools.devserver
+uv run manage.py migrate
+uv run manage.py createsuperuser
+uv run manage.py runserver
 ```
 
-The command starts embedded PostgreSQL, applies migrations, and serves the application at
-<http://127.0.0.1:8000/>. Pass another address as its sole argument when needed:
-
-```sh
-uv run python -m tools.devserver 127.0.0.1:8080
-```
-
-Local settings are the default for `manage.py`. To run individual management commands, first
-set `PICAFRESA_LOCAL_DATABASE_URL` to another local PostgreSQL instance. Deployed processes
-must explicitly select `config.settings.staging` or `config.settings.production` and provide
-that environment's database URL and secret settings.
+Local settings start embedded PostgreSQL automatically for each command and preserve its data
+between commands. Open <http://127.0.0.1:8000/> after starting the server. Set
+`PICAFRESA_LOCAL_DATABASE_URL` only when you intentionally want another local PostgreSQL
+instance. Deployed processes must explicitly select `config.settings.staging` or
+`config.settings.production` and provide that environment's database URL and secret settings.
 
 ## Quality checks
 
