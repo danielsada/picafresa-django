@@ -10,7 +10,8 @@ from django.core.exceptions import ImproperlyConfigured
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict
 
-POSTGRES_MAJOR_VERSION = 17
+LOCAL_POSTGRES_MAJOR_VERSION = 17
+STAGING_POSTGRES_MAJOR_VERSION = 18
 LOCAL_DATABASE_NAME = "picafresa_local"
 LOCAL_DATABASE_ROLE = "picafresa_local_app"
 STAGING_DATABASE_NAME = "picafresa_staging"
@@ -45,6 +46,15 @@ def required_environment(environment: Mapping[str, str], name: str) -> str:
     if not value:
         raise ImproperlyConfigured(f"Set the {name} environment variable.")
     return value
+
+
+def shared_staging_server_allowed(
+    environment: Mapping[str, str] = os.environ,
+) -> bool:
+    value = environment.get("PICAFRESA_ALLOW_SHARED_STAGING_SERVER", "false").lower()
+    if value not in {"true", "false"}:
+        raise ImproperlyConfigured("PICAFRESA_ALLOW_SHARED_STAGING_SERVER must be true or false.")
+    return value == "true"
 
 
 def parse_database_url(url: str, *, variable_name: str) -> DatabaseTarget:
@@ -120,9 +130,11 @@ def validate_staging_database_urls(
             f"{STAGING_DATABASE_NAME} and role {STAGING_DATABASE_ROLE}."
         )
 
-    if app.host == production_host:
+    if app.host == production_host and not shared_staging_server_allowed(environment):
         raise ImproperlyConfigured(
-            "The staging database server matches the configured production server."
+            "The staging database server matches the configured production server. "
+            "Set PICAFRESA_ALLOW_SHARED_STAGING_SERVER=true only after confirming "
+            "database-level isolation."
         )
 
     if not require_admin:
@@ -158,7 +170,12 @@ def provision_local_database(postgres_directory: Path) -> str:
         database=LOCAL_DATABASE_NAME,
     )
     validate_local_database_url(app_url)
-    provision_database(admin_url, app_url)
+    provision_database(
+        admin_url,
+        app_url,
+        postgres_major_version=LOCAL_POSTGRES_MAJOR_VERSION,
+        dedicated_server=True,
+    )
     return app_url
 
 
@@ -167,42 +184,54 @@ def provision_staging_database(
 ) -> str:
     app, admin = validate_staging_database_urls(environment)
     assert admin is not None
-    provision_database(admin.url, app.url)
+    provision_database(
+        admin.url,
+        app.url,
+        postgres_major_version=STAGING_POSTGRES_MAJOR_VERSION,
+        dedicated_server=not shared_staging_server_allowed(environment),
+    )
     return app.url
 
 
-def provision_database(admin_url: str, app_url: str) -> None:
+def provision_database(
+    admin_url: str,
+    app_url: str,
+    *,
+    postgres_major_version: int,
+    dedicated_server: bool,
+) -> None:
     app = parse_database_url(app_url, variable_name="application database URL")
     admin = parse_database_url(admin_url, variable_name="admin database URL")
     with psycopg.connect(admin_url, autocommit=True) as connection:
-        _require_supported_postgres(connection)
+        _require_postgres_version(connection, postgres_major_version)
         connection.execute(
             "SELECT pg_advisory_lock(hashtext(%s))",
             (f"picafresa-provision:{app.database}",),
         )
-        unexpected_databases = connection.execute(
-            """
-            SELECT datname
-            FROM pg_database
-            WHERE datallowconn
-              AND datname <> ALL(%s)
-            """,
-            (
-                [
-                    app.database,
-                    "postgres",
-                    "template0",
-                    "template1",
-                    "test_postgres",
-                ],
-            ),
-        ).fetchall()
-        if unexpected_databases:
-            names = ", ".join(row[0] for row in unexpected_databases)
-            raise RuntimeError(
-                "Provisioning requires a dedicated local or staging PostgreSQL server; "
-                f"found other databases: {names}."
-            )
+        if dedicated_server:
+            unexpected_databases = connection.execute(
+                """
+                SELECT datname
+                FROM pg_database
+                WHERE datallowconn
+                  AND datname <> ALL(%s)
+                """,
+                (
+                    [
+                        app.database,
+                        "postgres",
+                        "template0",
+                        "template1",
+                        "test_postgres",
+                    ],
+                ),
+            ).fetchall()
+            if unexpected_databases:
+                names = ", ".join(row[0] for row in unexpected_databases)
+                raise RuntimeError(
+                    "Dedicated provisioning found other databases: "
+                    f"{names}. Enable shared staging only when intentional."
+                )
 
         role_exists = connection.execute(
             "SELECT EXISTS (SELECT FROM pg_roles WHERE rolname = %s)",
@@ -239,27 +268,28 @@ def provision_database(admin_url: str, app_url: str) -> None:
                 sql.Identifier(app.role),
             )
         )
-        other_databases = connection.execute(
-            """
-            SELECT datname
-            FROM pg_database
-            WHERE datallowconn
-              AND datname <> %s
-            """,
-            (app.database,),
-        ).fetchall()
-        for (database_name,) in other_databases:
-            connection.execute(
-                sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
-                    sql.Identifier(database_name),
-                    sql.Identifier(admin.role),
+        if dedicated_server:
+            other_databases = connection.execute(
+                """
+                SELECT datname
+                FROM pg_database
+                WHERE datallowconn
+                  AND datname <> %s
+                """,
+                (app.database,),
+            ).fetchall()
+            for (database_name,) in other_databases:
+                connection.execute(
+                    sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
+                        sql.Identifier(database_name),
+                        sql.Identifier(admin.role),
+                    )
                 )
-            )
-            connection.execute(
-                sql.SQL("REVOKE CONNECT ON DATABASE {} FROM PUBLIC").format(
-                    sql.Identifier(database_name)
+                connection.execute(
+                    sql.SQL("REVOKE CONNECT ON DATABASE {} FROM PUBLIC").format(
+                        sql.Identifier(database_name)
+                    )
                 )
-            )
 
     target_admin_url = database_url_with_identity(admin_url, database=app.database)
     with psycopg.connect(target_admin_url, autocommit=True) as connection:
@@ -269,22 +299,34 @@ def provision_database(admin_url: str, app_url: str) -> None:
         )
 
 
-def verify_database(url: str, *, environment: str) -> DatabaseReport:
+def verify_database(
+    url: str,
+    *,
+    environment: str,
+    allow_other_database_connections: bool = False,
+) -> DatabaseReport:
     if environment == "local":
         validate_local_database_url(url)
     elif environment == "staging":
-        validate_staging_database_urls(
-            {
-                "PICAFRESA_STAGING_DATABASE_URL": url,
-                "PICAFRESA_STAGING_DATABASE_HOST": urlparse(url).hostname or "",
-            },
-            require_admin=False,
+        target = parse_database_url(
+            url,
+            variable_name="PICAFRESA_STAGING_DATABASE_URL",
         )
+        if target.database != STAGING_DATABASE_NAME or target.role != STAGING_DATABASE_ROLE:
+            raise ImproperlyConfigured(
+                "PICAFRESA_STAGING_DATABASE_URL must use database "
+                f"{STAGING_DATABASE_NAME} and role {STAGING_DATABASE_ROLE}."
+            )
     else:
         raise ValueError(f"Unsupported environment: {environment}")
 
     with psycopg.connect(url) as connection:
-        major_version = _require_supported_postgres(connection)
+        expected_major_version = (
+            LOCAL_POSTGRES_MAJOR_VERSION
+            if environment == "local"
+            else STAGING_POSTGRES_MAJOR_VERSION
+        )
+        major_version = _require_postgres_version(connection, expected_major_version)
         row = connection.execute(
             """
             SELECT
@@ -325,30 +367,38 @@ def verify_database(url: str, *, environment: str) -> DatabaseReport:
             can_create_in_public_schema=row[6],
             can_connect_other_databases=row[7],
         )
-        _require_least_privilege(report)
+        _require_least_privilege(
+            report,
+            allow_other_database_connections=allow_other_database_connections,
+        )
         return report
 
 
-def _require_supported_postgres(
+def _require_postgres_version(
     connection: psycopg.Connection[tuple[object, ...]],
+    expected_major_version: int,
 ) -> int:
     row = connection.execute("SHOW server_version_num").fetchone()
     assert row is not None
     major_version = int(str(row[0])) // 10_000
-    if major_version != POSTGRES_MAJOR_VERSION:
+    if major_version != expected_major_version:
         raise RuntimeError(
-            f"PostgreSQL {POSTGRES_MAJOR_VERSION} is required; found {major_version}."
+            f"PostgreSQL {expected_major_version} is required; found {major_version}."
         )
     return major_version
 
 
-def _require_least_privilege(report: DatabaseReport) -> None:
+def _require_least_privilege(
+    report: DatabaseReport,
+    *,
+    allow_other_database_connections: bool,
+) -> None:
     if (
         report.is_superuser
         or report.can_create_database
         or report.can_create_role
         or report.owns_database
-        or report.can_connect_other_databases
+        or (report.can_connect_other_databases and not allow_other_database_connections)
         or not report.can_create_in_public_schema
     ):
         raise RuntimeError(

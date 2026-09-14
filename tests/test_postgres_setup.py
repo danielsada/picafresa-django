@@ -6,6 +6,7 @@ from django.core.exceptions import ImproperlyConfigured
 from config.postgres import (
     LOCAL_DATABASE_NAME,
     LOCAL_DATABASE_ROLE,
+    LOCAL_POSTGRES_MAJOR_VERSION,
     provision_local_database,
     validate_local_database_url,
     validate_staging_database_urls,
@@ -22,7 +23,7 @@ def test_local_database_can_be_provisioned_and_verified_without_container(
 
     assert report.database == LOCAL_DATABASE_NAME
     assert report.role == LOCAL_DATABASE_ROLE
-    assert report.postgres_major_version == 17
+    assert report.postgres_major_version == LOCAL_POSTGRES_MAJOR_VERSION
     assert report.is_superuser is False
     assert report.can_create_database is False
     assert report.can_create_role is False
@@ -80,6 +81,25 @@ def test_staging_database_rejects_production_target() -> None:
         match="staging database server matches the configured production server",
     ):
         validate_staging_database_urls(environment)
+
+
+def test_staging_database_allows_explicit_shared_server_opt_in() -> None:
+    environment = {
+        "PICAFRESA_STAGING_DATABASE_URL": (
+            "postgresql://picafresa_staging_app:secret@db.example/picafresa_staging?sslmode=require"
+        ),
+        "PICAFRESA_STAGING_DATABASE_ADMIN_URL": (
+            "postgresql://staging_admin:secret@db.example/postgres?sslmode=require"
+        ),
+        "PICAFRESA_STAGING_DATABASE_HOST": "db.example",
+        "PICAFRESA_PRODUCTION_DATABASE_HOST": "db.example",
+        "PICAFRESA_ALLOW_SHARED_STAGING_SERVER": "true",
+    }
+
+    app, admin = validate_staging_database_urls(environment)
+
+    assert app.database == "picafresa_staging"
+    assert admin is not None
 
 
 def test_staging_database_rejects_query_parameter_host_override() -> None:

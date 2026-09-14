@@ -33,10 +33,11 @@ database and role names.
 
 ## Provision staging PostgreSQL
 
-Staging must use a dedicated PostgreSQL 17 server or partition separate from production. The
-provisioner creates a `picafresa_staging` database and a `picafresa_staging_app` login
-restricted to that database. Django migrations create the application tables inside it; do not
-create a parallel staging table inside production.
+Staging uses a PostgreSQL 18 database separate from production. A dedicated server remains the
+default, but an existing shared Azure PostgreSQL server can be used through an explicit opt-in.
+The provisioner creates a `picafresa_staging` database and a `picafresa_staging_app` login
+without administrative or cross-database object privileges. Django migrations create the
+application tables inside it.
 
 Load these values from your deployment secret environment:
 
@@ -44,6 +45,7 @@ Load these values from your deployment secret environment:
 export PICAFRESA_STAGING_DATABASE_HOST=staging-postgres.example.com
 export PICAFRESA_STAGING_DATABASE_URL='postgresql://picafresa_staging_app:<password>@staging-postgres.example.com/picafresa_staging?sslmode=require'
 export PICAFRESA_STAGING_DATABASE_ADMIN_URL='postgresql://<provisioner>:<password>@staging-postgres.example.com/postgres?sslmode=require'
+export PICAFRESA_ALLOW_SHARED_STAGING_SERVER=true
 export PICAFRESA_PRODUCTION_DATABASE_HOST=production-postgres.example.com
 export PICAFRESA_PRODUCTION_DATABASE_URL='postgresql://picafresa_production_app:<password>@production-postgres.example.com/picafresa_production?sslmode=require'
 ```
@@ -58,11 +60,16 @@ DJANGO_SETTINGS_MODULE=config.settings.staging uv run manage.py migrate
 DJANGO_SETTINGS_MODULE=config.settings.staging uv run manage.py check --deploy
 ```
 
-Commands fail before connecting when required configuration is absent, when the effective
-staging names or host do not match the allowlisted values, or when staging resolves to the
-configured production server. Provisioning also refuses a server containing another
-application database. The provisioning role is separate from the application role and must
-never be committed to a file.
+For manual provisioning through DBeaver, follow the two execution stages in
+[`tools/provision_staging_dbeaver.sql`](tools/provision_staging_dbeaver.sql). The script
+generates the application password; copy it from DBeaver's output directly into the staging
+secret store and clear the output afterward.
+
+Commands fail before connecting when required configuration is absent or when the effective
+staging names or host do not match the allowlisted values. A staging target on the production
+server is rejected unless `PICAFRESA_ALLOW_SHARED_STAGING_SERVER=true` is explicitly set.
+Shared-server mode never changes `PUBLIC` connection privileges on existing databases. The
+provisioning role is separate from the application role and must never be committed to a file.
 
 ## Quality checks
 
