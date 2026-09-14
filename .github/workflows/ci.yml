@@ -18,8 +18,7 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-      - run: uv sync --locked
-      - name: Validate
+      - name: Install and validate
         env:
           BASE_BRANCH: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
-        run: make validate
+        run: make ci

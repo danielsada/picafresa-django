@@ -77,14 +77,16 @@ provisioning role is separate from the application role and must never be commit
 Install the locked development environment and run the complete local validation workflow:
 
 ```sh
-uv sync --locked
-make validate
+make ci
 ```
 
-`make validate` checks migration consistency and Django configuration, verifies Ruff formatting
-and linting, runs strict mypy, executes the tests against embedded PostgreSQL, and rejects
-changed Python code below 90% coverage. Changed-code coverage compares with `origin/main` by
-default; use another merge base when needed:
+`make ci` installs the exact `uv.lock` environment and runs the same validation entrypoint used
+by GitHub Actions. `make validate` checks migration consistency and Django configuration,
+verifies Ruff formatting and linting, runs strict mypy, executes the complete test suite against
+embedded PostgreSQL, and rejects changed Python code below 90% coverage. The test suite includes
+unit, PostgreSQL integration, and role-facing journey tests without production services or
+credentials. Changed-code coverage compares with `origin/main` by default; use another merge
+base when needed:
 
 ```sh
 make changed-coverage BASE_BRANCH=origin/your-base-branch
@@ -92,6 +94,7 @@ make changed-coverage BASE_BRANCH=origin/your-base-branch
 
 Individual gates are available as `make migration-check`, `make django-check`,
 `make format-check`, `make lint`, `make typecheck`, `make test`, and `make coverage`.
+Use `make sync` to install only the locked environment.
 
 Generated Django migrations are excluded from Ruff and strict annotation checks. Coverage also
 excludes generated migrations, Django's ASGI/WSGI launchers, the management launcher, and the

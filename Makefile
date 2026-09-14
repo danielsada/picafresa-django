@@ -1,7 +1,12 @@
 UV_RUN := uv run
 BASE_BRANCH ?= origin/main
 
-.PHONY: validate migration-check django-check format-check lint typecheck test coverage changed-coverage
+.PHONY: ci sync validate migration-check django-check format-check lint typecheck test coverage changed-coverage
+
+ci: sync validate
+
+sync:
+	uv sync --locked
 
 validate: migration-check django-check format-check lint typecheck changed-coverage
 
