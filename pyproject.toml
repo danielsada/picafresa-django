@@ -1,0 +1,44 @@
+[project]
+name = "picafresa-django"
+version = "0.1.0"
+description = "Standalone Picafresa platform"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "django>=6.1,<6.2",
+    "dj-database-url>=3.0,<4",
+    "psycopg[binary]>=3.2,<4",
+]
+
+[dependency-groups]
+dev = [
+    "django-stubs>=6,<7",
+    "mypy>=1.17,<2",
+    "pgembed>=0.2,<0.3",
+    "pytest>=8.4,<9",
+    "pytest-django>=4.11,<5",
+    "ruff>=0.12,<1",
+]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.local"
+python_files = ["test_*.py"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+extend-exclude = ["**/migrations/*.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "C4", "C90", "SIM"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 20
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+plugins = ["mypy_django_plugin.main"]
+exclude = ["accounts/migrations/"]
+
+[tool.django-stubs]
+django_settings_module = "config.settings.local"
