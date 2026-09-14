@@ -19,12 +19,7 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --locked
-      - run: uv run ruff check .
-      - run: uv run ruff format --check .
-      - run: uv run mypy .
-      - run: uv run manage.py check
-      - run: uv run manage.py makemigrations --check --dry-run
-      - run: uv run pytest --cov=. --cov-report=xml
-      - name: Enforce changed-code coverage
-        if: github.event_name == 'pull_request'
-        run: uv run diff-cover coverage.xml --compare-branch=origin/${{ github.base_ref }} --fail-under=90
+      - name: Validate
+        env:
+          BASE_BRANCH: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || 'origin/main' }}
+        run: make validate

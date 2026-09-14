@@ -7,6 +7,7 @@ call, or share write paths with the legacy Go projects.
 
 - Python 3.13, installed automatically by `uv`
 - [`uv`](https://docs.astral.sh/uv/)
+- GNU Make
 
 The development dependency `pgembed` provides a real PostgreSQL 17 server inside the `uv`
 environment. It stores local data under `.local/postgres`, starts with the application, and
@@ -73,11 +74,26 @@ provisioning role is separate from the application role and must never be commit
 
 ## Quality checks
 
+Install the locked development environment and run the complete local validation workflow:
+
 ```sh
-uv run pytest
-uv run manage.py makemigrations --check
-uv run manage.py check
-uv run ruff check .
-uv run ruff format --check .
-uv run mypy .
+uv sync --locked
+make validate
 ```
+
+`make validate` checks migration consistency and Django configuration, verifies Ruff formatting
+and linting, runs strict mypy, executes the tests against embedded PostgreSQL, and rejects
+changed Python code below 90% coverage. Changed-code coverage compares with `origin/main` by
+default; use another merge base when needed:
+
+```sh
+make changed-coverage BASE_BRANCH=origin/your-base-branch
+```
+
+Individual gates are available as `make migration-check`, `make django-check`,
+`make format-check`, `make lint`, `make typecheck`, `make test`, and `make coverage`.
+
+Generated Django migrations are excluded from Ruff and strict annotation checks. Coverage also
+excludes generated migrations, Django's ASGI/WSGI launchers, the management launcher, and the
+embedded PostgreSQL settings adapter because those are generated or process-bound integration
+surfaces rather than application logic.

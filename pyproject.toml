@@ -48,7 +48,7 @@ line-length = 100
 extend-exclude = ["**/migrations/*.py"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "C4", "C90", "SIM"]
+select = ["E", "F", "I", "B", "C", "SIM"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 20
@@ -57,7 +57,7 @@ max-complexity = 20
 python_version = "3.13"
 strict = true
 plugins = ["mypy_django_plugin.main"]
-exclude = ["accounts/migrations/"]
+exclude = ["(^|/)migrations/"]
 
 [tool.django-stubs]
 django_settings_module = "config.settings.local"
