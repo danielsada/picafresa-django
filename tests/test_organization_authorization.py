@@ -1,3 +1,4 @@
+from django.core.exceptions import PermissionDenied
 from django.db import IntegrityError, transaction
 from django.test import TestCase
 
@@ -5,8 +6,6 @@ from accounts.models import User
 from audit.models import AuditEvent
 from organizations.models import (
     AssistanceProvider,
-    Business,
-    ProviderAssignment,
     Reseller,
     ScopedAssignment,
 )
@@ -16,36 +15,42 @@ from organizations.selectors import (
     can_access_provider,
     can_access_reseller,
 )
-from organizations.services import revoke_assignment
+from organizations.services import revoke_assignment, soft_delete_organization
+from tests.builders import (
+    create_business,
+    create_provider_assignment,
+    create_provider_scope,
+    create_reseller_scope,
+    create_tenant_scope,
+)
 
 
 class OrganizationAuthorizationTests(TestCase):
     def setUp(self) -> None:
         self.north = Reseller.objects.create(name="Socio Norte")
         self.south = Reseller.objects.create(name="Socio Sur")
-        self.north_business = Business.objects.create(
+        self.north_business = create_business(
             name="Empresa Gemela",
             reseller=self.north,
         )
-        self.south_business = Business.objects.create(
+        self.south_business = create_business(
             name="Empresa Gemela",
             reseller=self.south,
         )
         self.provider = AssistanceProvider.objects.create(name="Asistencia Uno")
-        self.north_provider_assignment = ProviderAssignment.objects.create(
+        self.north_provider_assignment = create_provider_assignment(
             business=self.north_business,
             provider=self.provider,
         )
-        self.south_provider_assignment = ProviderAssignment.objects.create(
+        self.south_provider_assignment = create_provider_assignment(
             business=self.south_business,
             provider=self.provider,
         )
 
     def test_reseller_assignment_cannot_cross_portfolio_boundary(self) -> None:
         user = User.objects.create_user(email="north.admin@example.com")
-        ScopedAssignment.objects.create(
+        create_reseller_scope(
             user=user,
-            role=ScopedAssignment.Role.RESELLER_ADMIN,
             reseller=self.north,
         )
 
@@ -60,9 +65,8 @@ class OrganizationAuthorizationTests(TestCase):
 
     def test_provider_assignment_grants_only_its_provider_tenant_context(self) -> None:
         user = User.objects.create_user(email="provider.employee@example.com")
-        ScopedAssignment.objects.create(
+        create_provider_scope(
             user=user,
-            role=ScopedAssignment.Role.PROVIDER_EMPLOYEE,
             provider_assignment=self.north_provider_assignment,
         )
 
@@ -74,14 +78,12 @@ class OrganizationAuthorizationTests(TestCase):
 
     def test_composable_assignments_union_scopes_without_broadening_each_role(self) -> None:
         user = User.objects.create_user(email="multi.scope@example.com")
-        ScopedAssignment.objects.create(
+        create_tenant_scope(
             user=user,
-            role=ScopedAssignment.Role.TENANT_ADMIN,
             business=self.north_business,
         )
-        ScopedAssignment.objects.create(
+        create_provider_scope(
             user=user,
-            role=ScopedAssignment.Role.PROVIDER_EMPLOYEE,
             provider_assignment=self.south_provider_assignment,
         )
 
@@ -96,17 +98,15 @@ class OrganizationAuthorizationTests(TestCase):
     def test_revoked_scope_can_be_granted_again_without_losing_audit_history(self) -> None:
         operator = User.objects.create_superuser(email="operator@example.com")
         user = User.objects.create_user(email="north.admin@example.com")
-        assignment = ScopedAssignment.objects.create(
+        assignment = create_reseller_scope(
             user=user,
-            role=ScopedAssignment.Role.RESELLER_ADMIN,
             reseller=self.north,
             granted_by=operator,
         )
 
         revoke_assignment(assignment, operator)
-        replacement = ScopedAssignment.objects.create(
+        replacement = create_reseller_scope(
             user=user,
-            role=ScopedAssignment.Role.RESELLER_ADMIN,
             reseller=self.north,
             granted_by=operator,
         )
@@ -127,3 +127,35 @@ class OrganizationAuthorizationTests(TestCase):
                 role=ScopedAssignment.Role.RESELLER_ADMIN,
                 business=self.north_business,
             )
+
+    def test_scoped_user_cannot_mutate_organization_outside_platform_admin(self) -> None:
+        user = User.objects.create_user(email="north.admin@example.com")
+        create_reseller_scope(
+            user=user,
+            reseller=self.north,
+        )
+
+        with self.assertRaises(PermissionDenied):
+            soft_delete_organization(self.south_business, user)
+
+        self.south_business.refresh_from_db()
+        self.assertTrue(self.south_business.is_active)
+        self.assertIsNone(self.south_business.deleted_at)
+
+    def test_scoped_user_cannot_revoke_another_users_assignment(self) -> None:
+        user = User.objects.create_user(email="north.admin@example.com")
+        other_user = User.objects.create_user(email="south.admin@example.com")
+        create_reseller_scope(
+            user=user,
+            reseller=self.north,
+        )
+        other_assignment = create_reseller_scope(
+            user=other_user,
+            reseller=self.south,
+        )
+
+        with self.assertRaises(PermissionDenied):
+            revoke_assignment(other_assignment, user)
+
+        other_assignment.refresh_from_db()
+        self.assertIsNone(other_assignment.revoked_at)

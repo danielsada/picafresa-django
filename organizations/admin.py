@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any, cast
 
+from django import forms
 from django.contrib import admin
 from django.db.models import QuerySet
 from django.forms import ModelForm
@@ -13,11 +14,31 @@ from accounts.models import User
 from .models import AssistanceProvider, Business, ProviderAssignment, Reseller, ScopedAssignment
 from .services import (
     LifecycleObject,
-    record_assignment_change,
+    record_assignment_grant,
     record_organization_change,
     revoke_assignment,
     soft_delete_organization,
 )
+
+
+class ScopedAssignmentAdminForm(forms.ModelForm):  # type: ignore[type-arg]
+    role = forms.ChoiceField(
+        label="rol",
+        choices=(
+            (
+                ScopedAssignment.Role.RESELLER_ADMIN,
+                ScopedAssignment.Role.RESELLER_ADMIN.label,
+            ),
+            (
+                ScopedAssignment.Role.PROVIDER_EMPLOYEE,
+                ScopedAssignment.Role.PROVIDER_EMPLOYEE.label,
+            ),
+        ),
+    )
+
+    class Meta:
+        model = ScopedAssignment
+        fields = "__all__"
 
 
 class OrganizationLifecycleAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
@@ -111,6 +132,7 @@ class ProviderAssignmentAdmin(OrganizationLifecycleAdmin):
 
 @admin.register(ScopedAssignment)
 class ScopedAssignmentAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
+    form = ScopedAssignmentAdminForm
     list_display = ("user", "role", "scope", "granted_by", "created_at", "revoked_at")
     list_filter = ("role", "revoked_at")
     search_fields = (
@@ -136,12 +158,7 @@ class ScopedAssignmentAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
         if not change:
             obj.granted_by = actor
         super().save_model(request, obj, form, change)
-        record_assignment_change(
-            obj,
-            actor,
-            list(form.changed_data),
-            created=not change,
-        )
+        record_assignment_grant(obj, actor)
 
     def delete_model(self, request: HttpRequest, obj: ScopedAssignment) -> None:
         revoke_assignment(obj, cast(User, request.user))
@@ -178,4 +195,4 @@ class ScopedAssignmentAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
         request: HttpRequest,
         obj: ScopedAssignment | None = None,
     ) -> bool:
-        return obj is None or obj.revoked_at is None
+        return obj is None

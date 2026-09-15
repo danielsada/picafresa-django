@@ -3,8 +3,9 @@ from django.test import TestCase
 from django.urls import reverse
 
 from accounts.models import User
-from organizations.models import AssistanceProvider, Business, Reseller, ScopedAssignment
+from organizations.models import AssistanceProvider, Reseller, ScopedAssignment
 from organizations.selectors import can_access_reseller
+from tests.builders import create_business, create_reseller_scope
 
 
 @pytest.mark.journey
@@ -55,7 +56,7 @@ class OrganizationAdminJourneyTests(TestCase):
 
     def test_platform_operator_can_override_provider_contacts_for_one_business(self) -> None:
         reseller = Reseller.objects.create(name="Socio Norte")
-        business = Business.objects.create(name="Empresa Gemela", reseller=reseller)
+        business = create_business(name="Empresa Gemela", reseller=reseller)
         provider = AssistanceProvider.objects.create(
             name="Asistencia Uno",
             contact_phone="+52 55 5555 0101",
@@ -135,6 +136,16 @@ class OrganizationAdminJourneyTests(TestCase):
         reseller = Reseller.objects.create(name="Socio Retirado")
 
         response = self.client.post(
+            reverse("admin:organizations_reseller_change", args=(reseller.pk,)),
+            {"name": reseller.name},
+            follow=True,
+        )
+
+        self.assertContains(response, "Socio Retirado")
+        audit_response = self.client.get(reverse("admin:audit_auditevent_changelist"))
+        self.assertContains(audit_response, "organization.deactivated")
+
+        response = self.client.post(
             reverse("admin:organizations_reseller_delete", args=(reseller.pk,)),
             {"post": "yes"},
             follow=True,
@@ -152,9 +163,8 @@ class OrganizationAdminJourneyTests(TestCase):
             password="test-password",
             is_staff=True,
         )
-        ScopedAssignment.objects.create(
+        create_reseller_scope(
             user=scoped_user,
-            role=ScopedAssignment.Role.RESELLER_ADMIN,
             reseller=reseller,
         )
         self.client.force_login(scoped_user)
@@ -166,3 +176,41 @@ class OrganizationAdminJourneyTests(TestCase):
             f"{reverse('admin:login')}?next={reverse('admin:index')}",
             fetch_redirect_response=False,
         )
+
+    def test_tenant_assignment_is_modeled_but_not_exposed_in_admin(self) -> None:
+        reseller = Reseller.objects.create(name="Socio Norte")
+        business = create_business(name="Empresa Norte", reseller=reseller)
+        scoped_user = User.objects.create_user(email="tenant.admin@example.com")
+
+        response = self.client.post(
+            reverse("admin:organizations_scopedassignment_add"),
+            {
+                "user": str(scoped_user.pk),
+                "role": ScopedAssignment.Role.TENANT_ADMIN,
+                "business": str(business.pk),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(ScopedAssignment.objects.filter(user=scoped_user).exists())
+
+    def test_active_assignment_must_be_revoked_instead_of_edited(self) -> None:
+        reseller = Reseller.objects.create(name="Socio Norte")
+        scoped_user = User.objects.create_user(email="north.admin@example.com")
+        assignment = create_reseller_scope(
+            user=scoped_user,
+            reseller=reseller,
+            granted_by=self.operator,
+        )
+
+        response = self.client.post(
+            reverse("admin:organizations_scopedassignment_change", args=(assignment.pk,)),
+            {
+                "user": str(scoped_user.pk),
+                "role": ScopedAssignment.Role.TENANT_ADMIN,
+            },
+        )
+
+        self.assertEqual(response.status_code, 403)
+        assignment.refresh_from_db()
+        self.assertEqual(assignment.role, ScopedAssignment.Role.RESELLER_ADMIN)

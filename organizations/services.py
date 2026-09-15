@@ -1,3 +1,4 @@
+from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.utils import timezone
 
@@ -13,6 +14,11 @@ from .models import (
 )
 
 LifecycleObject = Reseller | Business | AssistanceProvider | ProviderAssignment
+
+
+def _require_platform_operator(actor: User) -> None:
+    if not actor.is_active or not actor.is_superuser:
+        raise PermissionDenied("Solo un operador de plataforma puede realizar este cambio.")
 
 
 def assignment_scope(assignment: ScopedAssignment) -> tuple[str, str]:
@@ -32,6 +38,7 @@ def record_organization_change(
     *,
     created: bool,
 ) -> None:
+    _require_platform_operator(actor)
     if created:
         action = "organization.created"
     elif "is_active" in changed_fields:
@@ -53,6 +60,7 @@ def record_organization_change(
 
 @transaction.atomic
 def soft_delete_organization(organization: LifecycleObject, actor: User) -> None:
+    _require_platform_operator(actor)
     if organization.deleted_at is not None:
         raise ValueError("La organización ya está eliminada.")
     organization.is_active = False
@@ -66,23 +74,20 @@ def soft_delete_organization(organization: LifecycleObject, actor: User) -> None
     )
 
 
-def record_assignment_change(
+def record_assignment_grant(
     assignment: ScopedAssignment,
     actor: User,
-    changed_fields: list[str],
-    *,
-    created: bool,
 ) -> None:
+    _require_platform_operator(actor)
     scope_type, scope_reference = assignment_scope(assignment)
     record_privileged_event(
         actor,
-        "assignment.granted" if created else "assignment.updated",
+        "assignment.granted",
         assignment,
         {
             "role": assignment.role,
             "scope_type": scope_type,
             "scope_reference": scope_reference,
-            "changed_fields": changed_fields,
         },
         scope_type=scope_type,
         scope_reference=scope_reference,
@@ -91,6 +96,7 @@ def record_assignment_change(
 
 @transaction.atomic
 def revoke_assignment(assignment: ScopedAssignment, actor: User) -> None:
+    _require_platform_operator(actor)
     if assignment.revoked_at is not None:
         raise ValueError("La asignación ya está revocada.")
     scope_type, scope_reference = assignment_scope(assignment)
