@@ -49,6 +49,7 @@ export PICAFRESA_STAGING_DATABASE_ADMIN_URL='postgresql://<provisioner>:<passwor
 export PICAFRESA_ALLOW_SHARED_STAGING_SERVER=true
 export PICAFRESA_PRODUCTION_DATABASE_HOST=production-postgres.example.com
 export PICAFRESA_PRODUCTION_DATABASE_URL='postgresql://picafresa_production_app:<password>@production-postgres.example.com/picafresa_production?sslmode=require'
+export GOVERNMENT_IDENTIFIER_LOOKUP_KEY='<independent-random-secret>'
 ```
 
 Run provisioning once with the staging provisioning role, then remove its URL from the

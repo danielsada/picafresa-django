@@ -69,5 +69,7 @@ STATICFILES_DIRS = [BASE_DIR / "static"]
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 AUTH_USER_MODEL = "accounts.User"
-LOGIN_REDIRECT_URL = "admin:index"
+AUTHENTICATION_BACKENDS = ["accounts.backends.IdentifierBackend"]
+LOGIN_REDIRECT_URL = "account-home"
 LOGOUT_REDIRECT_URL = "/"
+DEFAULT_FROM_EMAIL = "cuentas@picafresa.mx"

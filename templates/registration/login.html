@@ -21,7 +21,7 @@
     <form method="post">
       {% csrf_token %}
       <div class="field">
-        <label for="{{ form.username.id_for_label }}">Correo electrónico</label>
+        <label for="{{ form.username.id_for_label }}">Correo electrónico o RFC</label>
         {{ form.username }}
       </div>
       <div class="field">
@@ -33,5 +33,6 @@
       {% endif %}
       <button type="submit">Iniciar sesión</button>
     </form>
+    <p><a href="{% url 'password-reset' %}">¿Olvidaste tu contraseña?</a></p>
   </section>
 {% endblock %}

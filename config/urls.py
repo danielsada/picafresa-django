@@ -1,15 +1,42 @@
 from django.contrib import admin
-from django.contrib.auth.views import LoginView, LogoutView
+from django.contrib.auth.views import LogoutView
 from django.urls import path
+
+from accounts import views as account_views
 
 urlpatterns = [
     path(
         "",
-        LoginView.as_view(
-            template_name="registration/login.html",
-            redirect_authenticated_user=True,
-        ),
+        account_views.AccountLoginView.as_view(),
         name="landing",
+    ),
+    path("cuenta/", account_views.home, name="account-home"),
+    path("cuenta/activar/", account_views.activate, name="account-activate"),
+    path(
+        "cuenta/recuperar/",
+        account_views.password_reset,
+        name="password-reset",
+    ),
+    path(
+        "cuenta/recuperar/enviado/",
+        account_views.password_reset_sent,
+        name="password-reset-sent",
+    ),
+    path(
+        "cuenta/recuperar/confirmar/",
+        account_views.password_reset_confirm,
+        name="password-reset-confirm",
+    ),
+    path("cuenta/cambiar-correo/", account_views.email_change, name="email-change"),
+    path(
+        "cuenta/cambiar-correo/enviado/",
+        account_views.email_change_sent,
+        name="email-change-sent",
+    ),
+    path(
+        "cuenta/cambiar-correo/confirmar/",
+        account_views.email_change_confirm,
+        name="email-change-confirm",
     ),
     path("cerrar-sesion/", LogoutView.as_view(), name="logout"),
     path("admin/", admin.site.urls),

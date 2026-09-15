@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+
+{% block title %}Mi cuenta | Picafresa{% endblock %}
+
+{% block content %}
+  <section class="sign-in" aria-labelledby="page-title">
+    <h1 id="page-title">Mi cuenta</h1>
+    <p>Tu cuenta está activa.</p>
+    <p><a href="{% url 'email-change' %}">Cambiar correo electrónico</a></p>
+  </section>
+{% endblock %}

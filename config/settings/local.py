@@ -8,6 +8,10 @@ from .environment import database_from_url
 
 DEBUG = True
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "local-development-only")
+GOVERNMENT_IDENTIFIER_LOOKUP_KEY = os.environ.get(
+    "GOVERNMENT_IDENTIFIER_LOOKUP_KEY",
+    "local-government-identifier-lookup-only",
+)
 ALLOWED_HOSTS = ["localhost", "127.0.0.1", "[::1]", "testserver"]
 
 LOCAL_DATABASE_URL = os.environ.get("PICAFRESA_LOCAL_DATABASE_URL") or database_url()

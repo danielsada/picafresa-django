@@ -3,6 +3,7 @@ from .environment import database_from_url, required_environment
 
 DEBUG = False
 SECRET_KEY = required_environment("DJANGO_SECRET_KEY")
+GOVERNMENT_IDENTIFIER_LOOKUP_KEY = required_environment("GOVERNMENT_IDENTIFIER_LOOKUP_KEY")
 ALLOWED_HOSTS = required_environment("DJANGO_ALLOWED_HOSTS").split(",")
 
 DATABASES = {

@@ -8,10 +8,17 @@ from .models import User
 @admin.register(User)
 class PicafresaUserAdmin(UserAdmin):  # type: ignore[type-arg]
     ordering = ("email",)
-    list_display = ("email", "first_name", "last_name", "is_staff", "is_active")
+    list_display = (
+        "email",
+        "email_verified_at",
+        "first_name",
+        "last_name",
+        "is_staff",
+        "is_active",
+    )
     search_fields = ("email", "first_name", "last_name")
     fieldsets = (
-        (None, {"fields": ("email", "password")}),
+        (None, {"fields": ("email", "password", "email_verified_at")}),
         (_("Personal info"), {"fields": ("first_name", "last_name")}),
         (
             _("Permissions"),

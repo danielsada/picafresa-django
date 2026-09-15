@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from django.contrib.auth.base_user import BaseUserManager
+from django.utils import timezone
 
 if TYPE_CHECKING:
     from .models import User
@@ -41,4 +42,5 @@ class UserManager(BaseUserManager["User"]):
             raise ValueError("Un superusuario debe tener is_staff=True.")
         if extra_fields.get("is_superuser") is not True:
             raise ValueError("Un superusuario debe tener is_superuser=True.")
+        extra_fields.setdefault("email_verified_at", timezone.now())
         return self._create_user(email, password, **extra_fields)

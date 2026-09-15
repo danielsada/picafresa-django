@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block title %}Activar cuenta | Picafresa{% endblock %}
+
+{% block content %}
+  <section class="sign-in" aria-labelledby="page-title">
+    <h1 id="page-title">Activa tu cuenta</h1>
+    <p>Escribe el código que enviamos a tu correo y define tu contraseña.</p>
+    <form method="post">
+      {% csrf_token %}
+      {{ form.as_div }}
+      <button type="submit">Activar cuenta</button>
+    </form>
+  </section>
+{% endblock %}

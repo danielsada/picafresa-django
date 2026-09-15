@@ -16,3 +16,8 @@ class UserEmailTests(TransactionTestCase):
 
         with self.assertRaises(IntegrityError):
             User.objects.create(email="MEMBER@example.com")
+
+    def test_email_is_normalized_when_saved_through_the_model(self) -> None:
+        user = User.objects.create(email=" Direct.Member@Example.COM ")
+
+        self.assertEqual(user.email, "direct.member@example.com")
