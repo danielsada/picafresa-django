@@ -5,7 +5,7 @@ import hmac
 import re
 import secrets
 import unicodedata
-from datetime import timedelta
+from datetime import date, timedelta
 
 from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
@@ -38,8 +38,21 @@ def normalize_government_identifier(kind: str, value: str) -> str:
     if kind != GovernmentIdentifier.Kind.MX_RFC:
         raise InvalidGovernmentIdentifier("El tipo de identificador no es compatible.")
     normalized = re.sub(r"[\s-]+", "", unicodedata.normalize("NFKC", value)).upper()
-    if re.fullmatch(r"[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}", normalized) is None:
+    match = re.fullmatch(
+        r"[A-ZÑ&]{3,4}(?P<encoded_date>\d{6})[A-Z0-9]{3}",
+        normalized,
+    )
+    if match is None:
         raise InvalidGovernmentIdentifier("El RFC no es válido.")
+    encoded_date = match.group("encoded_date")
+    try:
+        date(
+            2000 + int(encoded_date[:2]),
+            int(encoded_date[2:4]),
+            int(encoded_date[4:]),
+        )
+    except ValueError as error:
+        raise InvalidGovernmentIdentifier("El RFC no es válido.") from error
     return normalized
 
 
