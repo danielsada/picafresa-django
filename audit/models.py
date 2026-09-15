@@ -32,6 +32,8 @@ class AuditEvent(models.Model):
     action = models.CharField(max_length=100)
     object_type = models.CharField(max_length=100)
     object_reference = models.CharField(max_length=100)
+    active_scope_type = models.CharField(max_length=100, blank=True)
+    active_scope_reference = models.CharField(max_length=100, blank=True)
     correlation_id = models.UUIDField(default=current_correlation_id)
     changes = models.JSONField(default=dict)
     occurred_at = models.DateTimeField(default=timezone.now)

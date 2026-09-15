@@ -32,6 +32,14 @@ its data between commands. Open <http://127.0.0.1:8000/> after starting the serv
 instance; the guard accepts only local hosts or Unix sockets and requires the expected local
 database and role names.
 
+## Platform operations
+
+Django Admin is reserved for active superusers acting as platform operators. It supports
+reseller portfolios, business tenants, independent assistance providers, tenant-specific
+provider contact overrides, and composable reseller, provider-tenant, and modeled tenant
+assignments. Organization deletion is soft, scope deletion revokes the assignment, and these
+privileged changes are recorded in the read-only audit event administration.
+
 ## Provision staging PostgreSQL
 
 Staging uses a PostgreSQL 18 database separate from production. A dedicated server remains the

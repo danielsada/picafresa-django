@@ -3,7 +3,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parents[2]
 
 INSTALLED_APPS = [
-    "django.contrib.admin",
+    "config.apps.PlatformAdminConfig",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
@@ -11,6 +11,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "accounts",
     "audit",
+    "organizations",
 ]
 
 MIDDLEWARE = [
