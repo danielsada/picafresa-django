@@ -8,6 +8,21 @@ from django.core.exceptions import ValidationError
 from .models import User
 
 
+def _clean_matching_password(
+    form: forms.Form,
+    cleaned_data: dict[str, Any],
+) -> dict[str, Any]:
+    password = cleaned_data.get("password1")
+    if password and password != cleaned_data.get("password2"):
+        form.add_error("password2", "Las contraseñas no coinciden.")
+    if password:
+        try:
+            validate_password(password)
+        except ValidationError as error:
+            form.add_error("password1", error)
+    return cleaned_data
+
+
 class ActivationForm(forms.Form):
     token = forms.CharField(
         label="Código de activación",
@@ -18,16 +33,7 @@ class ActivationForm(forms.Form):
     password2 = forms.CharField(label="Confirmar contraseña", widget=forms.PasswordInput)
 
     def clean(self) -> dict[str, Any]:
-        cleaned_data = super().clean() or {}
-        password = cleaned_data.get("password1")
-        if password and password != cleaned_data.get("password2"):
-            self.add_error("password2", "Las contraseñas no coinciden.")
-        if password:
-            try:
-                validate_password(password)
-            except ValidationError as error:
-                self.add_error("password1", error)
-        return cleaned_data
+        return _clean_matching_password(self, super().clean() or {})
 
 
 class IdentifierAuthenticationForm(AuthenticationForm):
@@ -52,16 +58,7 @@ class PasswordProofForm(forms.Form):
     password2 = forms.CharField(label="Confirmar contraseña", widget=forms.PasswordInput)
 
     def clean(self) -> dict[str, Any]:
-        cleaned_data = super().clean() or {}
-        password = cleaned_data.get("password1")
-        if password and password != cleaned_data.get("password2"):
-            self.add_error("password2", "Las contraseñas no coinciden.")
-        if password:
-            try:
-                validate_password(password)
-            except ValidationError as error:
-                self.add_error("password1", error)
-        return cleaned_data
+        return _clean_matching_password(self, super().clean() or {})
 
 
 class EmailChangeForm(forms.Form):

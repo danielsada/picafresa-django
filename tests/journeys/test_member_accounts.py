@@ -10,6 +10,7 @@ from django.utils import timezone
 
 from accounts.models import GovernmentIdentifier, User
 from accounts.services import add_government_identifier, issue_activation
+from audit.models import AuditEvent
 
 
 class MemberAccountJourneyTests(TestCase):
@@ -35,6 +36,12 @@ class MemberAccountJourneyTests(TestCase):
         self.assertTrue(user.is_active)
         self.assertIsNotNone(user.email_verified_at)
         self.assertTrue(user.check_password("correct horse battery staple"))
+        self.assertTrue(
+            AuditEvent.objects.filter(
+                actor=user,
+                action="account.activated",
+            ).exists()
+        )
         duplicate = self.client.post(
             reverse("account-activate"),
             {
@@ -158,14 +165,20 @@ class MemberAccountJourneyTests(TestCase):
             password="correct horse battery staple",
             email_verified_at=timezone.now(),
         )
-        self.client.login(
-            username=user.email,
-            password="correct horse battery staple",
+        self.client.post(
+            reverse("landing"),
+            {
+                "username": user.email,
+                "password": "correct horse battery staple",
+            },
         )
         other_session = Client()
-        other_session.login(
-            username=user.email,
-            password="correct horse battery staple",
+        other_session.post(
+            reverse("landing"),
+            {
+                "username": user.email,
+                "password": "correct horse battery staple",
+            },
         )
 
         rejected = self.client.post(
@@ -203,6 +216,8 @@ class MemberAccountJourneyTests(TestCase):
         self.assertEqual(mail.outbox[1].to, ["old.member@example.com"])
         self.assertNotIn("_auth_user_id", self.client.session)
         self.assertNotIn("_auth_user_id", other_session.session)
+        event = AuditEvent.objects.get(action="account.email_changed")
+        self.assertEqual(event.changes, {"email_changed": True})
 
     def test_expired_and_invalid_proofs_are_rejected_without_sensitive_logs(self) -> None:
         user = User.objects.create_user(email="invited.member@example.com", is_active=False)
@@ -252,6 +267,12 @@ class MemberAccountJourneyTests(TestCase):
         self.assertNotIn(raw_rfc, logged)
         self.assertNotContains(expired, token, status_code=400)
         self.assertNotContains(invalid, token, status_code=400)
+        audit_payloads = " ".join(
+            str(changes) for changes in AuditEvent.objects.values_list("changes", flat=True)
+        )
+        self.assertNotIn(token, audit_payloads)
+        self.assertNotIn(password, audit_payloads)
+        self.assertNotIn(raw_rfc, audit_payloads)
 
     def test_unverified_email_cannot_authenticate(self) -> None:
         user = User.objects.create_user(

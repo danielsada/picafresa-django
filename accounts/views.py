@@ -6,6 +6,7 @@ from django.contrib.auth.views import LoginView
 from django.core.exceptions import ValidationError
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
+from django.views.decorators.http import require_POST
 
 from .forms import (
     ActivationForm,
@@ -20,6 +21,7 @@ from .services import (
     InvalidAccountProof,
     activate_account,
     confirm_email_change,
+    discard_user_session,
     invalidate_user_sessions,
     request_email_change,
     request_password_reset,
@@ -61,6 +63,15 @@ def activate(request: HttpRequest) -> HttpResponse:
 @login_required
 def home(request: HttpRequest) -> HttpResponse:
     return render(request, "accounts/home.html")
+
+
+@require_POST
+def logout_account(request: HttpRequest) -> HttpResponse:
+    session_key = request.session.session_key
+    logout(request)
+    if session_key is not None:
+        discard_user_session(session_key)
+    return redirect("landing")
 
 
 def password_reset(request: HttpRequest) -> HttpResponse:

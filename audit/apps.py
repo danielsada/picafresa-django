@@ -1,7 +1,7 @@
 from django.apps import AppConfig
 
 
-class AccountsConfig(AppConfig):
+class AuditConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
-    name = "accounts"
-    verbose_name = "Cuentas"
+    name = "audit"
+    verbose_name = "Auditoría"

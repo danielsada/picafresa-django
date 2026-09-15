@@ -11,8 +11,10 @@ from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
 from django.contrib.sessions.models import Session
 from django.core.mail import send_mail
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
+
+from audit.services import record_user_security_event
 
 from .models import AccountProof, AccountSession, GovernmentIdentifier, User
 
@@ -51,16 +53,23 @@ def government_identifier_digest(kind: str, value: str) -> str:
     ).hexdigest()
 
 
+@transaction.atomic
 def add_government_identifier(
     user: User,
     kind: str,
     value: str,
 ) -> GovernmentIdentifier:
-    return GovernmentIdentifier.objects.create(
+    identity = GovernmentIdentifier.objects.create(
         user=user,
         kind=kind,
         lookup_digest=government_identifier_digest(kind, value),
     )
+    record_user_security_event(
+        user,
+        "account.government_identifier_added",
+        {"identifier_type": kind},
+    )
+    return identity
 
 
 def issue_activation(user: User) -> None:
@@ -130,6 +139,7 @@ def reset_password(token: str, password: str) -> User:
         purpose=AccountProof.Purpose.PASSWORD_RESET,
         consumed_at__isnull=True,
     ).update(consumed_at=now)
+    record_user_security_event(user, "account.password_reset", {"password_changed": True})
     return user
 
 
@@ -153,8 +163,15 @@ def request_email_change(user: User, new_email: str) -> None:
     )
 
 
-@transaction.atomic
 def confirm_email_change(user: User, token: str) -> str:
+    try:
+        return _confirm_email_change(user, token)
+    except IntegrityError as error:
+        raise InvalidAccountProof("La prueba no es válida.") from error
+
+
+@transaction.atomic
+def _confirm_email_change(user: User, token: str) -> str:
     digest = _proof_digest(AccountProof.Purpose.EMAIL_CHANGE, token)
     try:
         proof = AccountProof.objects.select_for_update().get(
@@ -188,6 +205,11 @@ def confirm_email_change(user: User, token: str) -> str:
         settings.DEFAULT_FROM_EMAIL,
         [old_email],
     )
+    record_user_security_event(
+        locked_user,
+        "account.email_changed",
+        {"email_changed": True},
+    )
     return old_email
 
 
@@ -197,6 +219,17 @@ def invalidate_user_sessions(user: User) -> None:
     )
     Session.objects.filter(session_key__in=session_keys).delete()
     AccountSession.objects.filter(user=user).delete()
+
+
+def track_user_session(user: User, session_key: str) -> None:
+    AccountSession.objects.update_or_create(
+        session_key=session_key,
+        defaults={"user": user},
+    )
+
+
+def discard_user_session(session_key: str) -> None:
+    AccountSession.objects.filter(session_key=session_key).delete()
 
 
 @transaction.atomic
@@ -232,4 +265,5 @@ def activate_account(token: str, password: str) -> User:
         purpose=AccountProof.Purpose.ACTIVATION,
         consumed_at__isnull=True,
     ).update(consumed_at=now)
+    record_user_security_event(user, "account.activated", {"email_verified": True})
     return user

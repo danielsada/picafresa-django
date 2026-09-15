@@ -1,5 +1,4 @@
 from django.contrib import admin
-from django.contrib.auth.views import LogoutView
 from django.urls import path
 
 from accounts import views as account_views
@@ -38,6 +37,6 @@ urlpatterns = [
         account_views.email_change_confirm,
         name="email-change-confirm",
     ),
-    path("cerrar-sesion/", LogoutView.as_view(), name="logout"),
+    path("cerrar-sesion/", account_views.logout_account, name="logout"),
     path("admin/", admin.site.urls),
 ]
