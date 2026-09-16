@@ -1,0 +1,25 @@
+{% extends "organizations/base.html" %}
+
+{% block title %}Editar contacto de Proveedor | Mi cartera{% endblock %}
+
+{% block portfolio_content %}
+  <h1 id="page-title" tabindex="-1">Editar contacto de Proveedor</h1>
+  <h2>{{ relationship.provider.name }}</h2>
+  <p>{{ relationship.business.name }} · {{ relationship.business.reseller.name }}</p>
+  <p id="contact-help">Estos cambios aplican solo a esta empresa. Deja un campo vacío para usar el contacto general del Proveedor.</p>
+  <details>
+    <summary>Contacto general del Proveedor</summary>
+    <dl>
+      <dt>Contacto</dt><dd>{{ relationship.provider.contact_name|default:"Sin registrar" }}</dd>
+      <dt>Correo</dt><dd>{{ relationship.provider.contact_email|default:"Sin registrar" }}</dd>
+      <dt>Teléfono</dt><dd>{{ relationship.provider.contact_phone|default:"Sin registrar" }}</dd>
+      <dt>Instrucciones de servicio</dt><dd>{{ relationship.provider.service_instructions|default:"Sin registrar"|linebreaksbr }}</dd>
+    </dl>
+  </details>
+  <form method="post" aria-describedby="contact-help">
+    {% csrf_token %}
+    {{ form.as_div }}
+    <button type="submit">Guardar cambios</button>
+  </form>
+  <p><a href="{% url 'organizations:business-detail' relationship.business_id %}">Cancelar</a></p>
+{% endblock %}

@@ -119,3 +119,88 @@ button:hover {
   color: #711428;
   background: #fbe9ec;
 }
+
+.portfolio {
+  width: min(100%, 64rem);
+  min-width: 0;
+  padding: clamp(1rem, 4vw, 2rem);
+  border-radius: 1.25rem;
+  background: #fffdfb;
+  overflow-wrap: anywhere;
+}
+
+.portfolio-nav,
+.pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  margin-block: 1rem 2rem;
+}
+
+.portfolio-nav form {
+  margin-left: auto;
+}
+
+.portfolio-list {
+  list-style: none;
+  padding: 0;
+}
+
+.portfolio-list li {
+  padding-block: 1rem;
+  border-bottom: 1px solid #cbbdb7;
+}
+
+.portfolio dt {
+  font-weight: 650;
+}
+
+.portfolio dd {
+  margin: 0.25rem 0 1rem;
+}
+
+.portfolio form > div {
+  display: grid;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.portfolio textarea {
+  width: 100%;
+  max-width: 100%;
+  padding: 0.85rem 1rem;
+  border: 1px solid #cbbdb7;
+  border-radius: 0.6rem;
+  font: inherit;
+}
+
+.portfolio a,
+.portfolio summary {
+  color: #871c2e;
+  text-underline-offset: 0.2em;
+}
+
+.portfolio a:focus-visible,
+.portfolio summary:focus-visible,
+.portfolio input:focus-visible,
+.portfolio textarea:focus-visible,
+.portfolio button:focus-visible {
+  outline: 3px solid #871c2e;
+  outline-offset: 3px;
+}
+
+.portfolio .errorlist {
+  color: #711428;
+}
+
+.skip-link {
+  position: absolute;
+  left: -10000px;
+}
+
+.skip-link:focus {
+  position: static;
+  display: block;
+  padding: 1rem;
+}

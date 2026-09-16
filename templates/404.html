@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+
+{% block title %}Página no disponible | Picafresa{% endblock %}
+
+{% block content %}
+  <section class="sign-in" aria-labelledby="page-title">
+    <h1 id="page-title">Página no disponible</h1>
+    <p>No se encontró la página solicitada.</p>
+    <a href="{% url 'account-home' %}">Volver a mi cuenta</a>
+  </section>
+{% endblock %}

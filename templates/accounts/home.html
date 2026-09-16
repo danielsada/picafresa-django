@@ -6,6 +6,9 @@
   <section class="sign-in" aria-labelledby="page-title">
     <h1 id="page-title">Mi cuenta</h1>
     <p>Tu cuenta está activa.</p>
+    {% if has_portfolio %}
+      <p><a href="{% url 'organizations:portfolio' %}">Mi cartera</a></p>
+    {% endif %}
     <p><a href="{% url 'email-change' %}">Cambiar correo electrónico</a></p>
   </section>
 {% endblock %}

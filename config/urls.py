@@ -1,5 +1,5 @@
 from django.contrib import admin
-from django.urls import path
+from django.urls import include, path
 
 from accounts import views as account_views
 
@@ -38,5 +38,6 @@ urlpatterns = [
         name="email-change-confirm",
     ),
     path("cerrar-sesion/", account_views.logout_account, name="logout"),
+    path("cartera/", include("organizations.urls")),
     path("admin/", admin.site.urls),
 ]

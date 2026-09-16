@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+
+{% block title %}Acceso no permitido | Picafresa{% endblock %}
+
+{% block content %}
+  <section class="sign-in" aria-labelledby="page-title">
+    <h1 id="page-title">Acceso no permitido</h1>
+    <p>Tu cuenta no tiene permiso para realizar esta operación.</p>
+    <a href="{% url 'account-home' %}">Volver a mi cuenta</a>
+  </section>
+{% endblock %}

@@ -1,0 +1,19 @@
+{% extends "organizations/base.html" %}
+
+{% block title %}Mi cartera | Picafresa{% endblock %}
+
+{% block portfolio_content %}
+  <h1 id="page-title" tabindex="-1">Mi cartera</h1>
+  <h2>Empresas activas</h2>
+  <ul class="portfolio-list">
+    {% for business in page %}
+      <li>
+        <h3><a href="{% url 'organizations:business-detail' business.pk %}">{{ business.name }}</a></h3>
+        <p>{{ business.reseller.name }}</p>
+      </li>
+    {% empty %}
+      <li>No hay empresas activas en tu cartera.</li>
+    {% endfor %}
+  </ul>
+  {% include "organizations/pagination.html" %}
+{% endblock %}

@@ -1,0 +1,29 @@
+{% extends "organizations/base.html" %}
+
+{% block title %}{{ business.name }} | Mi cartera{% endblock %}
+
+{% block portfolio_content %}
+  <h1 id="page-title" tabindex="-1">{{ business.name }}</h1>
+  <p>{{ business.reseller.name }}</p>
+  <p>Zona horaria: {{ business.timezone }}</p>
+  <p><a href="{% url 'organizations:business-edit' business.pk %}">Editar empresa</a></p>
+  <h2>Proveedores de la empresa</h2>
+  <ul class="portfolio-list">
+    {% for relationship in page %}
+      <li>
+        <h3>{{ relationship.provider.name }}</h3>
+        <p>{% if relationship.is_active %}Relación activa{% else %}Relación inactiva{% endif %}</p>
+        <dl>
+          <dt>Contacto</dt><dd>{{ relationship.effective_contact_name|default:"Sin registrar" }}</dd>
+          <dt>Correo</dt><dd>{{ relationship.effective_contact_email|default:"Sin registrar" }}</dd>
+          <dt>Teléfono</dt><dd>{{ relationship.effective_contact_phone|default:"Sin registrar" }}</dd>
+          <dt>Instrucciones de servicio</dt><dd>{{ relationship.effective_service_instructions|default:"Sin registrar"|linebreaksbr }}</dd>
+        </dl>
+        <a href="{% url 'organizations:provider-edit' business.pk relationship.pk %}">Editar contacto de {{ relationship.provider.name }}</a>
+      </li>
+    {% empty %}
+      <li>No hay proveedores disponibles para esta empresa.</li>
+    {% endfor %}
+  </ul>
+  {% include "organizations/pagination.html" %}
+{% endblock %}

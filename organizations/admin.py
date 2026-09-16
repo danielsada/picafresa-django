@@ -143,7 +143,7 @@ class ScopedAssignmentAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
     )
     readonly_fields = ("granted_by", "revoked_at", "revoked_by", "created_at")
 
-    @admin.display(description="alcance")
+    @admin.display(description="Permisos Para")
     def scope(self, assignment: ScopedAssignment) -> object:
         return assignment.reseller or assignment.business or assignment.provider_assignment
 

@@ -12,8 +12,90 @@ from .models import (
     Reseller,
     ScopedAssignment,
 )
+from .selectors import administered_businesses, administered_provider_assignments
 
 LifecycleObject = Reseller | Business | AssistanceProvider | ProviderAssignment
+
+
+@transaction.atomic
+def update_portfolio_business(
+    *,
+    actor: User,
+    business_id: int,
+    name: str,
+    timezone_name: str,
+) -> Business:
+    business = (
+        administered_businesses(actor)
+        .select_for_update(of=("self",))
+        .filter(pk=business_id)
+        .first()
+    )
+    if business is None:
+        raise PermissionDenied
+    changed_fields = [
+        field
+        for field, value in (("name", name), ("timezone", timezone_name))
+        if getattr(business, field) != value
+    ]
+    business.name = name
+    business.timezone = timezone_name
+    business.full_clean()
+    if changed_fields:
+        business.save(update_fields=[*changed_fields, "updated_at"])
+        record_privileged_event(
+            actor,
+            "organization.updated",
+            business,
+            {"changed_fields": changed_fields},
+            scope_type="reseller",
+            scope_reference=str(business.reseller_id),
+        )
+    return business
+
+
+@transaction.atomic
+def update_portfolio_provider(
+    *,
+    actor: User,
+    business_id: int,
+    relationship_id: int,
+    contact_name: str,
+    contact_email: str,
+    contact_phone: str,
+    service_instructions: str,
+) -> ProviderAssignment:
+    relationship = (
+        administered_provider_assignments(actor)
+        .select_for_update(of=("self",))
+        .filter(pk=relationship_id, business_id=business_id)
+        .first()
+    )
+    if relationship is None:
+        raise PermissionDenied
+    values = {
+        "contact_name_override": contact_name,
+        "contact_email_override": contact_email,
+        "contact_phone_override": contact_phone,
+        "service_instructions_override": service_instructions,
+    }
+    changed_fields = [
+        field for field, value in values.items() if getattr(relationship, field) != value
+    ]
+    for field, value in values.items():
+        setattr(relationship, field, value)
+    relationship.full_clean()
+    if changed_fields:
+        relationship.save(update_fields=[*changed_fields, "updated_at"])
+        record_privileged_event(
+            actor,
+            "organization.updated",
+            relationship,
+            {"changed_fields": changed_fields},
+            scope_type="reseller",
+            scope_reference=str(relationship.business.reseller_id),
+        )
+    return relationship
 
 
 def _require_platform_operator(actor: User) -> None:
@@ -28,7 +110,7 @@ def assignment_scope(assignment: ScopedAssignment) -> tuple[str, str]:
         return "business", str(assignment.business_id)
     if assignment.provider_assignment_id is not None:
         return "provider_assignment", str(assignment.provider_assignment_id)
-    raise ValueError("La asignación no tiene un alcance válido.")
+    raise ValueError("La asignación no indica para quién se otorgan los permisos.")
 
 
 def record_organization_change(

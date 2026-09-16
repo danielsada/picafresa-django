@@ -6,7 +6,10 @@ from django.contrib.auth.views import LoginView
 from django.core.exceptions import ValidationError
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
+from django.urls import reverse
 from django.views.decorators.http import require_POST
+
+from organizations.selectors import administered_resellers
 
 from .forms import (
     ActivationForm,
@@ -35,8 +38,11 @@ class AccountLoginView(LoginView):
     authentication_form = IdentifierAuthenticationForm
 
     def get_success_url(self) -> str:
-        if self.request.user.is_staff:
+        user = cast(User, self.request.user)
+        if user.is_staff and user.is_superuser:
             return "/admin/"
+        if administered_resellers(user).exists():
+            return self.get_redirect_url() or reverse("organizations:portfolio")
         return super().get_success_url()
 
 
@@ -62,7 +68,11 @@ def activate(request: HttpRequest) -> HttpResponse:
 
 @login_required
 def home(request: HttpRequest) -> HttpResponse:
-    return render(request, "accounts/home.html")
+    return render(
+        request,
+        "accounts/home.html",
+        {"has_portfolio": administered_resellers(cast(User, request.user)).exists()},
+    )
 
 
 @require_POST

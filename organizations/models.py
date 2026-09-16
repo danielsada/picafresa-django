@@ -9,7 +9,7 @@ from django.db.models import Q
 def validate_iana_timezone(value: str) -> None:
     try:
         ZoneInfo(value)
-    except ZoneInfoNotFoundError as error:
+    except (ZoneInfoNotFoundError, ValueError) as error:
         raise ValidationError("Escribe una zona horaria IANA válida.") from error
 
 
@@ -199,8 +199,8 @@ class ScopedAssignment(models.Model):
 
     class Meta:
         ordering = ("user__email", "role")
-        verbose_name = "asignación de alcance"
-        verbose_name_plural = "asignaciones de alcance"
+        verbose_name = "asignación de permisos"
+        verbose_name_plural = "asignaciones de permisos"
         constraints = [
             models.CheckConstraint(
                 condition=(

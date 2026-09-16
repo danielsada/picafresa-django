@@ -40,6 +40,67 @@ provider contact overrides, and composable reseller, provider-tenant, and modele
 assignments. Organization deletion is soft, scope deletion revokes the assignment, and these
 privileged changes are recorded in the read-only audit event administration.
 
+## Reseller back office
+
+An active user with a non-revoked reseller-administrator assignment signs in at `/` and
+lands at `/cartera/` (also linked from **Mi cuenta**). Each list contains at most 20 records
+per page, limited to active, non-deleted businesses in the user's active reseller portfolios.
+Provider-employee and tenant-administrator assignments never expand this administrative scope;
+the staff flag alone does not grant Django Admin access.
+
+Reseller administrators can edit a business's name and IANA timezone and the contact overrides
+of its existing, non-deleted provider relationships. Clearing an override restores the canonical
+provider contact for that field. Inactive relationships remain inspectable, but inactive or
+deleted providers are unavailable. The server fixes business/reseller/provider references from
+the authorized URL rather than accepting them from forms. Every actual change is audited with
+the actor, reseller scope, correlation ID, and changed field names, not contact values.
+
+Business creation, portfolio reassignment, lifecycle controls, global provider contact changes,
+and role grants remain platform-only here. Contract creation and lifecycle workflows belong to
+ticket 09. Pricing, government identifiers, and raw audit data are not exposed in this back office.
+Pages use labeled server-rendered forms, keyboard navigation, and a responsive layout without
+requiring JavaScript.
+
+## Live-testing demo
+
+From this project directory, start a local-only demo with:
+
+```sh
+bash tools/run_local_demo.sh
+```
+
+The script applies local migrations, seeds the example portfolios, then serves
+<http://127.0.0.1:8000/>. Stop it with Ctrl+C. It explicitly uses `config.settings.local`;
+the seed command refuses staging, production, and other settings modules.
+
+| Portfolio | Example businesses | Login |
+| --- | --- | --- |
+| Platform operator | All portfolios through Django Admin | `demo.operador@example.test` |
+| Archers | M21, HUC | `demo.archers@example.test` |
+| Carlos Asistencias | Asistencias Centro, Asistencias Norte | `demo.carlos@example.test` |
+| Salubritas SA de CV | Clínica Centro Demo, Clínica Sur Demo | `demo.salubritas@example.test` |
+| Pedro Beneficios | Beneficios Centro, Beneficios Norte | `demo.pedro@example.test` |
+
+Each reseller starts with 23 businesses, including synthetic numbered branches to exercise
+pagination, and relationships with **Asistencias Cuatro** and **Asistencias MENOS**. Each reseller login
+is verified and scoped only to its own portfolio. All contacts are fictitious; the named
+portfolios and businesses are examples, not imported customer data.
+
+New accounts receive random passwords printed **once** to the terminal as JSON. Save them
+locally for testing; never commit the output. On reruns, `password: null` means the existing
+password is unchanged. After the first successful seed, an immutable audit marker identifies
+the existing portfolios by ID: reruns do not recreate renamed organizations or restore revoked
+permissions. Existing organization/contact edits are preserved, and conflicting account state
+or cross-portfolio permissions abort the seed without partial changes.
+For an existing demo account whose password was not saved, reset it explicitly with
+`uv run manage.py changepassword demo.archers@example.test`.
+
+To seed without starting the server:
+
+```sh
+DJANGO_SETTINGS_MODULE=config.settings.local uv run manage.py seed_local_demo
+```
+
 ## Provision staging PostgreSQL
 
 Staging uses a PostgreSQL 18 database separate from production. A dedicated server remains the

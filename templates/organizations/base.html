@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="portfolio" aria-labelledby="page-title">
+    <a href="#page-title" class="skip-link">Saltar al contenido</a>
+    <nav aria-label="Navegación de cartera" class="portfolio-nav">
+      <a href="{% url 'organizations:portfolio' %}">Mi cartera</a>
+      <a href="{% url 'account-home' %}">Mi cuenta</a>
+      <form method="post" action="{% url 'logout' %}">
+        {% csrf_token %}
+        <button type="submit">Cerrar sesión</button>
+      </form>
+    </nav>
+    {% for message in messages %}
+      <p role="status">{{ message }}</p>
+    {% endfor %}
+    {% block portfolio_content %}{% endblock %}
+  </section>
+{% endblock %}

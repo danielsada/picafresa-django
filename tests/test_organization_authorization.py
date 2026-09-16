@@ -15,7 +15,12 @@ from organizations.selectors import (
     can_access_provider,
     can_access_reseller,
 )
-from organizations.services import revoke_assignment, soft_delete_organization
+from organizations.services import (
+    revoke_assignment,
+    soft_delete_organization,
+    update_portfolio_business,
+    update_portfolio_provider,
+)
 from tests.builders import (
     create_business,
     create_provider_assignment,
@@ -159,3 +164,37 @@ class OrganizationAuthorizationTests(TestCase):
 
         other_assignment.refresh_from_db()
         self.assertIsNone(other_assignment.revoked_at)
+
+    def test_portfolio_mutation_services_independently_require_reseller_scope(self) -> None:
+        user = User.objects.create_user(email="scoped@example.com")
+        create_reseller_scope(user=user, reseller=self.south)
+        create_tenant_scope(user=user, business=self.north_business)
+        create_provider_scope(user=user, provider_assignment=self.north_provider_assignment)
+
+        with self.assertRaises(PermissionDenied):
+            update_portfolio_business(
+                actor=user,
+                business_id=self.north_business.pk,
+                name="Cambio no autorizado",
+                timezone_name="America/Tijuana",
+            )
+        with self.assertRaises(PermissionDenied):
+            update_portfolio_provider(
+                actor=user,
+                business_id=self.north_business.pk,
+                relationship_id=self.north_provider_assignment.pk,
+                contact_name="Cambio no autorizado",
+                contact_email="",
+                contact_phone="",
+                service_instructions="",
+            )
+        with self.assertRaises(PermissionDenied):
+            update_portfolio_provider(
+                actor=user,
+                business_id=self.south_business.pk,
+                relationship_id=self.north_provider_assignment.pk,
+                contact_name="Cambio no autorizado",
+                contact_email="",
+                contact_phone="",
+                service_instructions="",
+            )

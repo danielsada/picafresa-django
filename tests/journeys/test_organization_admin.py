@@ -214,3 +214,14 @@ class OrganizationAdminJourneyTests(TestCase):
         self.assertEqual(response.status_code, 403)
         assignment.refresh_from_db()
         self.assertEqual(assignment.role, ScopedAssignment.Role.RESELLER_ADMIN)
+
+    def test_assignment_ui_describes_permissions_instead_of_alcance(self) -> None:
+        reseller = Reseller.objects.create(name="Archers")
+        user = User.objects.create_user(email="demo.archers@example.test")
+        create_reseller_scope(user=user, reseller=reseller, granted_by=self.operator)
+
+        response = self.client.get(reverse("admin:organizations_scopedassignment_changelist"))
+
+        self.assertContains(response, "Permisos Para")
+        self.assertContains(response, "Asignaciones de permisos")
+        self.assertNotContains(response, "alcance")
