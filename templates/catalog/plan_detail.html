@@ -1,0 +1,21 @@
+{% extends "catalog/base.html" %}
+{% block title %}{{ plan.name }} | Picafresa{% endblock %}
+{% block catalog_content %}
+  <h1 id="page-title" tabindex="-1">{{ plan.name }}</h1>
+  <p>{{ plan.reseller }} · Proveedor: {{ plan.provider }}</p>
+  <p>{{ provider_permanence }}</p>
+  {% if user.is_superuser %}
+    <p>Importe interno: {{ plan.internal_amount|default_if_none:"Sin importe" }} · {{ plan.currency }}</p>
+  {% endif %}
+  <p><a href="{% url 'catalog:plan-edit' plan.pk %}">Editar Plan</a></p>
+  <p><a href="{% url 'catalog:draft-create' plan.pk %}">Crear borrador de versión</a></p>
+  <h2>Versiones</h2>
+  <ul class="portfolio-list">
+    {% for version in page %}
+      <li><a href="{% url 'catalog:version-detail' version.pk %}">Versión {{ version.number }}</a> — {{ version.get_status_display }} · {{ version.effective_from }} a {{ version.effective_until }} (exclusiva)</li>
+    {% empty %}
+      <li>No hay versiones. Crea el primer borrador.</li>
+    {% endfor %}
+  </ul>
+  {% include "organizations/pagination.html" %}
+{% endblock %}

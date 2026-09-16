@@ -1,0 +1,12 @@
+{% extends "catalog/base.html" %}
+{% block title %}Guardar Plan | Picafresa{% endblock %}
+{% block catalog_content %}
+  <h1 id="page-title" tabindex="-1">{% if plan %}Editar Plan{% else %}Crear Plan{% endif %}</h1>
+  <p>{{ provider_permanence }}</p>
+  {% if plan %}<p>{{ plan.reseller }} · Proveedor: {{ plan.provider }}</p>{% endif %}
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Guardar Plan</button>
+  </form>
+{% endblock %}

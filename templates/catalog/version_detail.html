@@ -1,0 +1,32 @@
+{% extends "catalog/base.html" %}
+{% block title %}Versión {{ version.number }} | Picafresa{% endblock %}
+{% block catalog_content %}
+  <h1 id="page-title" tabindex="-1">{{ version.plan.name }} · Versión {{ version.number }}</h1>
+  <p><a href="{% url 'catalog:plan-detail' version.plan_id %}">Ver Plan e historial</a></p>
+  <p>Proveedor: {{ version.plan.provider }}</p>
+  <p>Estado: {{ version.get_status_display }}</p>
+  <p>Vigente desde {{ version.effective_from }} hasta {{ version.effective_until }} (fecha exclusiva).</p>
+  <p>Duración: {{ version.duration_months }} meses calendario.</p>
+  <h2>Condiciones de cobertura</h2>
+  {{ version.coverage_terms|linebreaks }}
+  <h2>Servicios para el Afiliado</h2>
+  <ul class="portfolio-list">
+    {% for service in version.services.all %}
+      <li><h3>{{ service.name }}</h3>{{ service.coverage_terms|linebreaks }}</li>
+    {% endfor %}
+  </ul>
+  {% if version.status == "draft" %}
+    {% if version.author_id == user.pk %}
+      <p><a href="{% url 'catalog:draft-edit' version.pk %}">Editar borrador</a></p>
+      <p>Otra persona autorizada debe publicar este borrador.</p>
+    {% else %}
+      <form method="post" action="{% url 'catalog:version-publish' version.pk %}">
+        {% csrf_token %}
+        <p>Al publicar, las condiciones y los servicios serán inmutables.</p>
+        <button type="submit">Publicar versión</button>
+      </form>
+    {% endif %}
+  {% else %}
+    <p>Publicada el {{ version.published_at }}. Esta versión y sus servicios son inmutables.</p>
+  {% endif %}
+{% endblock %}

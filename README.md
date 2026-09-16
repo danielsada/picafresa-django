@@ -61,6 +61,39 @@ ticket 09. Pricing, government identifiers, and raw audit data are not exposed i
 Pages use labeled server-rendered forms, keyboard navigation, and a responsive layout without
 requiring JavaScript.
 
+## Draft and publish Plans
+
+`/planes/` is available from the reseller portfolio, **Mi cuenta**, and the read-only catalog
+in platform Django Admin. Reseller administrators see only Plans owned by their active reseller
+portfolios; platform operators can inspect all historical Plans. Plan and version lists use
+20-record pages. Tenant and provider roles do not grant catalog administration.
+
+A Plan has one permanent reseller and assistance provider. Replacing its provider requires a
+new Plan identity, as explained in the Spanish forms. An optional internal amount and explicit
+currency (MXN by default) are editable and visible only to platform operators. Reseller edits
+preserve existing internal pricing.
+
+Each numbered draft contains an effective start and exclusive end date, a positive duration in
+calendar months, descriptive coverage terms, and member-facing services. The author can edit
+the draft and add or remove services without JavaScript (up to 100 services in the form).
+Only a different authorized reseller administrator or platform operator can publish it,
+including when the author is a platform operator. Reviewers cannot edit another author's draft
+and then approve their own changes. Inactive resellers or inactive/deleted providers block
+mutations without removing operator access to historical terms.
+
+Publication freezes the complete version and its services. Later terms use a new numbered
+draft; earlier terms are never overwritten. PostgreSQL constraints and triggers protect the
+permanent identity, author, two-person publication, and published terms, including against ORM
+bulk changes or service reparenting. Service operations serialize draft numbering, editing,
+and publication. Django Admin provides inspection and links to these guarded workflows rather
+than a second mutation path.
+
+Plan creation, edits, drafts, publication, and rejected privileged requests produce append-only
+audit evidence with actor, object references, correlation ID, and operation/status metadata, not
+pricing, submitted terms, or contact values. Failed service mutations roll back before recording
+their rejection; callers must not wrap these entrypoints in a transaction that subsequently
+rolls back the audit event.
+
 ## Live-testing demo
 
 From this project directory, start a local-only demo with:

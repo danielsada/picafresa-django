@@ -1,0 +1,14 @@
+{% extends "catalog/base.html" %}
+{% block title %}Planes | Picafresa{% endblock %}
+{% block catalog_content %}
+  <h1 id="page-title" tabindex="-1">Planes</h1>
+  <p><a href="{% url 'catalog:plan-create' %}">Crear Plan</a></p>
+  <ul class="portfolio-list">
+    {% for plan in page %}
+      <li><a href="{% url 'catalog:plan-detail' plan.pk %}">{{ plan.name }}</a> — {{ plan.reseller }} · {{ plan.provider }}</li>
+    {% empty %}
+      <li>No hay planes disponibles.</li>
+    {% endfor %}
+  </ul>
+  {% include "organizations/pagination.html" %}
+{% endblock %}

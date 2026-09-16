@@ -1,0 +1,21 @@
+{% extends "catalog/base.html" %}
+{% block title %}Borrador de Plan | Picafresa{% endblock %}
+{% block catalog_content %}
+  <h1 id="page-title" tabindex="-1">{% if version %}Editar borrador{% else %}Crear borrador{% endif %} · {{ plan.name }}</h1>
+  <p>Solo el autor puede editar el borrador. Otra persona autorizada debe revisarlo y publicarlo.</p>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <h2>Servicios para el Afiliado</h2>
+    {{ services.management_form }}
+    {{ services.non_form_errors }}
+    {% for service in services %}
+      <fieldset>
+        <legend>Servicio {{ forloop.counter }}</legend>
+        {{ service.as_p }}
+      </fieldset>
+    {% endfor %}
+    <button type="submit" name="add_service" value="1">Agregar otro servicio</button>
+    <button type="submit">Guardar borrador</button>
+  </form>
+{% endblock %}

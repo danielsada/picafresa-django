@@ -9,6 +9,9 @@
     {% if has_portfolio %}
       <p><a href="{% url 'organizations:portfolio' %}">Mi cartera</a></p>
     {% endif %}
+    {% if has_portfolio or user.is_superuser %}
+      <p><a href="{% url 'catalog:plan-list' %}">Planes</a></p>
+    {% endif %}
     <p><a href="{% url 'email-change' %}">Cambiar correo electrónico</a></p>
   </section>
 {% endblock %}
