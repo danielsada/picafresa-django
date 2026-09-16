@@ -119,14 +119,12 @@ pagination, and relationships with **Asistencias Cuatro** and **Asistencias MENO
 is verified and scoped only to its own portfolio. All contacts are fictitious; the named
 portfolios and businesses are examples, not imported customer data.
 
-New accounts receive random passwords printed **once** to the terminal as JSON. Save them
-locally for testing; never commit the output. On reruns, `password: null` means the existing
-password is unchanged. After the first successful seed, an immutable audit marker identifies
-the existing portfolios by ID: reruns do not recreate renamed organizations or restore revoked
-permissions. Existing organization/contact edits are preserved, and conflicting account state
-or cross-portfolio permissions abort the seed without partial changes.
-For an existing demo account whose password was not saved, reset it explicitly with
-`uv run manage.py changepassword demo.archers@example.test`.
+Every run assigns fresh random passwords to all demo accounts and prints them to the terminal
+as JSON. Save the current output locally for testing; never commit it. After the first successful
+seed, an immutable audit marker identifies the existing portfolios by ID: reruns rotate only the
+demo passwords and do not recreate renamed organizations or restore revoked permissions. Existing
+organization/contact edits are preserved, and conflicting account state or cross-portfolio
+permissions abort the seed without partial changes.
 
 To seed without starting the server:
 

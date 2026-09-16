@@ -65,12 +65,23 @@ def _check_permissions(user: User, reseller: Reseller) -> None:
         raise CommandError(f"La cuenta {user.email} tiene permisos para otras organizaciones.")
 
 
+def _reset_demo_password(user: User) -> str:
+    password = secrets.token_urlsafe(16)
+    user.set_password(password)
+    user.save(update_fields=["password"])
+    return password
+
+
 def _existing_credentials(operator: User, event: AuditEvent) -> list[dict[str, str | None]]:
     references = event.changes.get("resellers")
     if event.actor_id != operator.pk or not isinstance(references, dict):
         raise CommandError("El registro de datos demo no coincide con la cuenta de operador.")
     credentials: list[dict[str, str | None]] = [
-        {"role": "Operador de plataforma", "email": operator.email, "password": None}
+        {
+            "role": "Operador de plataforma",
+            "email": operator.email,
+            "password": _reset_demo_password(operator),
+        }
     ]
     for _, slug, _ in PORTFOLIOS:
         reseller_id = references.get(slug)
@@ -83,14 +94,20 @@ def _existing_credentials(operator: User, event: AuditEvent) -> list[dict[str, s
             raise CommandError("No se encontró una cartera demo; no se recreó.")
         user, _ = _demo_account(f"demo.{slug}@example.test", create=False)
         _check_permissions(user, reseller)
-        credentials.append({"role": reseller.name, "email": user.email, "password": None})
+        credentials.append(
+            {
+                "role": reseller.name,
+                "email": user.email,
+                "password": _reset_demo_password(user),
+            }
+        )
     return credentials
 
 
 class Command(BaseCommand):
     help = (
-        "Crea datos ficticios para pruebas locales. Las contraseñas nuevas se muestran "
-        "una sola vez; las cuentas y los datos existentes no se sobrescriben."
+        "Crea datos ficticios para pruebas locales. En cada ejecución restablece y muestra "
+        "las contraseñas demo; los datos existentes no se sobrescriben."
     )
 
     def handle(self, *args: str, **options: object) -> str:

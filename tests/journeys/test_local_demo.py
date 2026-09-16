@@ -55,7 +55,7 @@ class LocalDemoJourneyTests(TestCase):
                         self.assertContains(response, "HUC")
 
     @override_settings(SETTINGS_MODULE="config.settings.local")
-    def test_rerunning_demo_preserves_passwords_and_live_contact_edits(self) -> None:
+    def test_rerunning_demo_rotates_passwords_and_preserves_live_contact_edits(self) -> None:
         first_output = StringIO()
         call_command("seed_local_demo", stdout=first_output)
         archers = json.loads(first_output.getvalue())[1]
@@ -84,13 +84,20 @@ class LocalDemoJourneyTests(TestCase):
 
         second_output = StringIO()
         call_command("seed_local_demo", stdout=second_output)
-        self.assertTrue(
-            all(account["password"] is None for account in json.loads(second_output.getvalue()))
-        )
+        second_accounts = json.loads(second_output.getvalue())
+        self.assertTrue(all(account["password"] for account in second_accounts))
+        second_archers = second_accounts[1]
+        self.assertNotEqual(second_archers["password"], archers["password"])
         self.client.logout()
         response = self.client.post(
             "/",
             {"username": archers["email"], "password": archers["password"]},
+            follow=True,
+        )
+        self.assertEqual(response.redirect_chain, [])
+        response = self.client.post(
+            "/",
+            {"username": second_archers["email"], "password": second_archers["password"]},
             follow=True,
         )
         self.assertRedirects(response, "/cartera/")
@@ -138,7 +145,18 @@ class LocalDemoJourneyTests(TestCase):
             {"post": "yes"},
         )
 
-        call_command("seed_local_demo", stdout=StringIO())
+        rerun_output = StringIO()
+        call_command("seed_local_demo", stdout=rerun_output)
+        rerun_accounts = json.loads(rerun_output.getvalue())
+        operator = rerun_accounts[0]
+        archers = rerun_accounts[1]
+        self.client.logout()
+        response = self.client.post(
+            "/",
+            {"username": operator["email"], "password": operator["password"]},
+            follow=True,
+        )
+        self.assertRedirects(response, "/admin/")
 
         resellers = self.client.get("/admin/organizations/reseller/")
         self.assertContains(resellers, "Cartera Renombrada")
