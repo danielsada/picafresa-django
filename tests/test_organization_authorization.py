@@ -6,16 +6,20 @@ from accounts.models import User
 from audit.models import AuditEvent
 from organizations.models import (
     AssistanceProvider,
+    ProviderAssignment,
     Reseller,
     ScopedAssignment,
 )
 from organizations.selectors import (
     accessible_businesses,
+    administered_provider_assignments,
     can_access_business,
     can_access_provider,
     can_access_reseller,
 )
 from organizations.services import (
+    create_provider_contract,
+    deactivate_provider_contract,
     revoke_assignment,
     soft_delete_organization,
     update_portfolio_business,
@@ -197,4 +201,59 @@ class OrganizationAuthorizationTests(TestCase):
                 contact_email="",
                 contact_phone="",
                 service_instructions="",
+            )
+
+    def test_reseller_manages_contract_lifecycle_without_granting_provider_administration(
+        self,
+    ) -> None:
+        admin = User.objects.create_user(email="north.admin@example.com")
+        provider_employee = User.objects.create_user(email="provider.employee@example.com")
+        create_reseller_scope(user=admin, reseller=self.north)
+        create_provider_scope(
+            user=provider_employee,
+            provider_assignment=self.north_provider_assignment,
+        )
+        second_provider = AssistanceProvider.objects.create(name="Asistencia Dos")
+
+        contract = create_provider_contract(
+            actor=admin,
+            business_id=self.north_business.pk,
+            provider_id=second_provider.pk,
+        )
+        self.assertTrue(administered_provider_assignments(admin).filter(pk=contract.pk).exists())
+        with self.assertRaises(PermissionDenied):
+            create_provider_contract(
+                actor=provider_employee,
+                business_id=self.north_business.pk,
+                provider_id=second_provider.pk,
+            )
+        south_admin = User.objects.create_user(email="south.admin@example.com")
+        create_reseller_scope(user=south_admin, reseller=self.south)
+        with self.assertRaises(PermissionDenied):
+            deactivate_provider_contract(
+                actor=south_admin,
+                business_id=self.north_business.pk,
+                contract_id=contract.pk,
+            )
+        deactivated = deactivate_provider_contract(
+            actor=admin,
+            business_id=self.north_business.pk,
+            contract_id=contract.pk,
+        )
+        self.assertFalse(deactivated.is_active)
+        self.assertTrue(administered_provider_assignments(admin).filter(pk=contract.pk).exists())
+        self.assertFalse(can_access_reseller(provider_employee, self.north))
+        self.assertFalse(
+            can_access_provider(provider_employee, second_provider, self.north_business)
+        )
+
+    def test_contract_identity_resists_cross_tenant_and_provider_reassignment(self) -> None:
+        other_provider = AssistanceProvider.objects.create(name="Asistencia Dos")
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            ProviderAssignment.objects.filter(pk=self.north_provider_assignment.pk).update(
+                business=self.south_business
+            )
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            ProviderAssignment.objects.filter(pk=self.north_provider_assignment.pk).update(
+                provider=other_provider
             )

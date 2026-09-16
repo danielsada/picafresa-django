@@ -47,8 +47,15 @@ class CatalogReadOnlyAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
 
 @admin.register(Plan)
 class PlanAdmin(CatalogReadOnlyAdmin):
-    list_display = ("name", "reseller", "provider", "internal_amount", "currency")
-    list_filter = ("reseller", "provider")
+    list_display = (
+        "name",
+        "reseller",
+        "provider",
+        "availability",
+        "internal_amount",
+        "currency",
+    )
+    list_filter = ("reseller", "provider", "availability")
     search_fields = ("name",)
     list_select_related = ("reseller", "provider")
 

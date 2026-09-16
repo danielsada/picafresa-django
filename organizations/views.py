@@ -7,17 +7,22 @@ from django.core.paginator import Paginator
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.cache import never_cache
-from django.views.decorators.http import require_http_methods, require_safe
+from django.views.decorators.http import require_http_methods, require_POST, require_safe
 
 from accounts.models import User
 
-from .forms import PortfolioBusinessForm, PortfolioProviderForm
+from .forms import PortfolioBusinessForm, PortfolioProviderForm, ProviderContractForm
 from .selectors import (
     administered_businesses,
     administered_provider_assignments,
     administered_resellers,
 )
-from .services import update_portfolio_business, update_portfolio_provider
+from .services import (
+    create_provider_contract,
+    deactivate_provider_contract,
+    update_portfolio_business,
+    update_portfolio_provider,
+)
 
 
 @login_required(login_url="landing")
@@ -106,3 +111,51 @@ def provider_edit(request: HttpRequest, business_id: int, relationship_id: int) 
         "organizations/provider_edit.html",
         {"relationship": relationship, "form": form},
     )
+
+
+@login_required(login_url="landing")
+@never_cache
+@require_http_methods(["GET", "POST"])
+def provider_contract_create(request: HttpRequest, business_id: int) -> HttpResponse:
+    actor = cast(User, request.user)
+    business = get_object_or_404(administered_businesses(actor), pk=business_id)
+    form = ProviderContractForm(request.POST if request.method == "POST" else None)
+    if request.method == "POST" and form.is_valid():
+        try:
+            create_provider_contract(
+                actor=actor,
+                business_id=business.pk,
+                provider_id=form.cleaned_data["provider"].pk,
+            )
+        except ValidationError as error:
+            form.add_error(None, error)
+        else:
+            messages.success(request, "Contrato creado.")
+            return redirect("organizations:business-detail", business_id=business.pk)
+    return render(
+        request,
+        "organizations/provider_contract_form.html",
+        {"business": business, "form": form},
+    )
+
+
+@login_required(login_url="landing")
+@never_cache
+@require_POST
+def provider_contract_deactivate(
+    request: HttpRequest,
+    business_id: int,
+    relationship_id: int,
+) -> HttpResponse:
+    actor = cast(User, request.user)
+    try:
+        deactivate_provider_contract(
+            actor=actor,
+            business_id=business_id,
+            contract_id=relationship_id,
+        )
+    except ValidationError as error:
+        messages.error(request, " ".join(error.messages))
+    else:
+        messages.success(request, "Contrato inactivo.")
+    return redirect("organizations:business-detail", business_id=business_id)

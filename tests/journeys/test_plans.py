@@ -7,6 +7,7 @@ from django.utils import timezone
 
 from accounts.models import User
 from audit.models import AuditEvent
+from catalog.models import Plan
 from catalog.services import DraftTerms, ServiceTerms, create_draft, create_plan
 from organizations.models import AssistanceProvider, Reseller
 from tests.builders import (
@@ -331,3 +332,46 @@ class PlanJourneyTests(TestCase):
         self.assertNotContains(history, "Versión 1</a>")
         self.assertContains(history, "Página 1 de 2")
         self.assertContains(self.client.get(f"{plan.get_absolute_url()}?page=2"), "Versión 1</a>")
+
+    def test_reseller_switches_plan_to_a_same_portfolio_business_allowlist(self) -> None:
+        included = create_business(name="Empresa Incluida", reseller=self.reseller)
+        create_business(name="Empresa Excluida", reseller=self.reseller)
+        other_reseller = Reseller.objects.create(name="Socio Sur")
+        foreign = create_business(name="Empresa Ajena", reseller=other_reseller)
+        plan = create_plan(
+            actor=self.author,
+            reseller_id=self.reseller.pk,
+            provider_id=self.provider.pk,
+            name="Plan Familiar",
+        )
+        self.client.force_login(self.author)
+
+        page = self.client.get(f"{plan.get_absolute_url()}disponibilidad/")
+        self.assertContains(page, "Todas las empresas")
+        self.assertContains(page, "Empresa Incluida")
+        self.assertContains(page, "Empresa Excluida")
+        self.assertNotContains(page, "Empresa Ajena")
+        saved = self.client.post(
+            f"{plan.get_absolute_url()}disponibilidad/",
+            {
+                "availability": Plan.Availability.SELECTED_BUSINESSES,
+                "businesses": [included.pk],
+            },
+            follow=True,
+        )
+        self.assertRedirects(saved, plan.get_absolute_url())
+        self.assertContains(saved, "Empresas seleccionadas")
+        self.assertContains(saved, "Empresa Incluida")
+        self.assertNotContains(saved, "Empresa Excluida")
+        plan.refresh_from_db()
+        self.assertEqual(plan.availability, Plan.Availability.SELECTED_BUSINESSES)
+        self.assertQuerySetEqual(plan.selected_businesses.all(), [included])
+        rejected = self.client.post(
+            f"{plan.get_absolute_url()}disponibilidad/",
+            {
+                "availability": Plan.Availability.SELECTED_BUSINESSES,
+                "businesses": [foreign.pk],
+            },
+        )
+        self.assertContains(rejected, "Seleccione una opción válida")
+        self.assertQuerySetEqual(plan.selected_businesses.all(), [included])

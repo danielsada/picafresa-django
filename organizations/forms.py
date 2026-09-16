@@ -1,6 +1,6 @@
 from django import forms
 
-from .models import Business, ProviderAssignment
+from .models import AssistanceProvider, Business, ProviderAssignment
 
 
 class PortfolioBusinessForm(forms.ModelForm):  # type: ignore[type-arg]
@@ -18,3 +18,13 @@ class PortfolioProviderForm(forms.ModelForm):  # type: ignore[type-arg]
             "contact_phone_override",
             "service_instructions_override",
         )
+
+
+class ProviderContractForm(forms.Form):
+    provider = forms.ModelChoiceField(
+        label="Proveedor",
+        queryset=AssistanceProvider.objects.filter(
+            is_active=True,
+            deleted_at__isnull=True,
+        ),
+    )

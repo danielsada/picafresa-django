@@ -4,6 +4,18 @@
   <h1 id="page-title" tabindex="-1">{{ plan.name }}</h1>
   <p>{{ plan.reseller }} · Proveedor: {{ plan.provider }}</p>
   <p>{{ provider_permanence }}</p>
+  <h2>Disponibilidad</h2>
+  <p>{{ plan.get_availability_display }}</p>
+  {% if plan.availability == "selected_businesses" %}
+    <ul>
+      {% for business in plan.selected_businesses.all %}
+        <li>{{ business.name }}</li>
+      {% empty %}
+        <li>Ninguna empresa seleccionada.</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+  <p><a href="{% url 'catalog:plan-availability' plan.pk %}">Configurar disponibilidad</a></p>
   {% if user.is_superuser %}
     <p>Importe interno: {{ plan.internal_amount|default_if_none:"Sin importe" }} · {{ plan.currency }}</p>
   {% endif %}

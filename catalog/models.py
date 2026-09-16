@@ -4,7 +4,7 @@ from django.db import models
 from django.db.models import F, Q
 from django.urls import reverse
 
-from organizations.models import AssistanceProvider, Reseller
+from organizations.models import AssistanceProvider, Business, Reseller
 
 PROVIDER_PERMANENCE = (
     "El Proveedor es permanente. Para cambiarlo debes crear un nuevo Plan; "
@@ -13,6 +13,10 @@ PROVIDER_PERMANENCE = (
 
 
 class Plan(models.Model):
+    class Availability(models.TextChoices):
+        ALL_BUSINESSES = "all_businesses", "Todas las empresas"
+        SELECTED_BUSINESSES = "selected_businesses", "Empresas seleccionadas"
+
     reseller = models.ForeignKey(
         Reseller, on_delete=models.PROTECT, related_name="plans", verbose_name="revendedor"
     )
@@ -38,6 +42,18 @@ class Plan(models.Model):
         default="MXN",
         validators=[RegexValidator(r"^[A-Z]{3}$", "Usa un código de moneda de tres letras.")],
     )
+    availability = models.CharField(
+        "disponibilidad",
+        max_length=30,
+        choices=Availability,
+        default=Availability.ALL_BUSINESSES,
+    )
+    selected_businesses = models.ManyToManyField(
+        Business,
+        through="PlanBusinessAvailability",
+        related_name="selected_plans",
+        verbose_name="empresas seleccionadas",
+    )
     created_at = models.DateTimeField("creado el", auto_now_add=True)
 
     class Meta:
@@ -56,6 +72,35 @@ class Plan(models.Model):
 
     def get_absolute_url(self) -> str:
         return reverse("catalog:plan-detail", args=[self.pk])
+
+
+class PlanBusinessAvailability(models.Model):
+    plan = models.ForeignKey(
+        Plan,
+        on_delete=models.CASCADE,
+        related_name="business_availabilities",
+        verbose_name="Plan",
+    )
+    business = models.ForeignKey(
+        Business,
+        on_delete=models.PROTECT,
+        related_name="plan_availabilities",
+        verbose_name="empresa",
+    )
+
+    class Meta:
+        ordering = ("business__name", "pk")
+        verbose_name = "disponibilidad de Plan"
+        verbose_name_plural = "disponibilidades de Plan"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("plan", "business"),
+                name="uq_plan_business_availability",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.plan} — {self.business}"
 
 
 class PlanVersion(models.Model):

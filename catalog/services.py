@@ -6,14 +6,20 @@ from decimal import Decimal
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
-from django.db.models import Max
+from django.db.models import Max, Q
 from django.utils import timezone
 
 from accounts.models import User
 from audit.services import record_privileged_event
-from organizations.models import AssistanceProvider
+from organizations.models import AssistanceProvider, Business, ProviderAssignment
 
-from .models import PROVIDER_PERMANENCE, Plan, PlanService, PlanVersion
+from .models import (
+    PROVIDER_PERMANENCE,
+    Plan,
+    PlanBusinessAvailability,
+    PlanService,
+    PlanVersion,
+)
 from .selectors import catalog_resellers, visible_plans
 
 
@@ -224,3 +230,93 @@ def publish_draft(*, actor: User, version_id: int) -> PlanVersion:
             scope_reference=str(version.plan.reseller_id),
         )
         return version
+
+
+@transaction.atomic
+def set_plan_availability(
+    *,
+    actor: User,
+    plan_id: int,
+    availability: Plan.Availability,
+    business_ids: tuple[int, ...],
+) -> Plan:
+    with _catalog_change(actor, Plan(pk=plan_id), "set_availability"):
+        plan = _editable_plan(actor, plan_id)
+        selected_ids = set(business_ids)
+        businesses = Business.objects.filter(
+            pk__in=selected_ids,
+            reseller_id=plan.reseller_id,
+            is_active=True,
+            deleted_at__isnull=True,
+        )
+        if businesses.count() != len(selected_ids):
+            raise ValidationError("Selecciona únicamente empresas activas del mismo revendedor.")
+        plan.availability = availability
+        plan.save(update_fields=["availability"])
+        PlanBusinessAvailability.objects.filter(plan=plan).delete()
+        if availability == Plan.Availability.SELECTED_BUSINESSES:
+            PlanBusinessAvailability.objects.bulk_create(
+                PlanBusinessAvailability(plan=plan, business=business) for business in businesses
+            )
+        record_privileged_event(
+            actor,
+            "plan.availability_updated",
+            plan,
+            {
+                "availability": availability,
+                "selected_business_count": len(selected_ids),
+            },
+            scope_type="reseller",
+            scope_reference=str(plan.reseller_id),
+        )
+        return plan
+
+
+def resolve_available_plan_version(
+    *,
+    business_id: int,
+    plan_id: int,
+    on_date: date,
+) -> PlanVersion | None:
+    plan = (
+        Plan.objects.filter(
+            pk=plan_id,
+            reseller__is_active=True,
+            reseller__deleted_at__isnull=True,
+            provider__is_active=True,
+            provider__deleted_at__isnull=True,
+        )
+        .filter(
+            Q(availability=Plan.Availability.ALL_BUSINESSES)
+            | Q(
+                availability=Plan.Availability.SELECTED_BUSINESSES,
+                business_availabilities__business_id=business_id,
+            )
+        )
+        .first()
+    )
+    if plan is None:
+        return None
+    if not Business.objects.filter(
+        pk=business_id,
+        reseller_id=plan.reseller_id,
+        is_active=True,
+        deleted_at__isnull=True,
+    ).exists():
+        return None
+    if not ProviderAssignment.objects.filter(
+        business_id=business_id,
+        provider_id=plan.provider_id,
+        is_active=True,
+        deleted_at__isnull=True,
+    ).exists():
+        return None
+    return (
+        plan.versions.filter(
+            status=PlanVersion.Status.PUBLISHED,
+            effective_from__lte=on_date,
+            effective_until__gt=on_date,
+        )
+        .order_by("-number")
+        .first()
+    )

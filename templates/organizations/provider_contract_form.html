@@ -1,0 +1,13 @@
+{% extends "organizations/base.html" %}
+
+{% block title %}Nuevo contrato | {{ business.name }}{% endblock %}
+
+{% block portfolio_content %}
+  <h1 id="page-title" tabindex="-1">Nuevo contrato para {{ business.name }}</h1>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_div }}
+    <button type="submit">Crear contrato</button>
+  </form>
+  <p><a href="{% url 'organizations:business-detail' business.pk %}">Cancelar</a></p>
+{% endblock %}

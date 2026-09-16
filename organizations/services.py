@@ -1,4 +1,4 @@
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.utils import timezone
 
@@ -96,6 +96,72 @@ def update_portfolio_provider(
             scope_reference=str(relationship.business.reseller_id),
         )
     return relationship
+
+
+@transaction.atomic
+def create_provider_contract(
+    *,
+    actor: User,
+    business_id: int,
+    provider_id: int,
+) -> ProviderAssignment:
+    business = (
+        administered_businesses(actor)
+        .select_for_update(of=("self",))
+        .filter(pk=business_id)
+        .first()
+    )
+    if business is None:
+        raise PermissionDenied
+    provider = AssistanceProvider.objects.filter(
+        pk=provider_id,
+        is_active=True,
+        deleted_at__isnull=True,
+    ).first()
+    if provider is None:
+        raise ValidationError("Selecciona un Proveedor activo.")
+    contract = ProviderAssignment(business=business, provider=provider)
+    contract.full_clean()
+    contract.save()
+    record_privileged_event(
+        actor,
+        "provider_contract.created",
+        contract,
+        {},
+        scope_type="reseller",
+        scope_reference=str(business.reseller_id),
+    )
+    return contract
+
+
+@transaction.atomic
+def deactivate_provider_contract(
+    *,
+    actor: User,
+    business_id: int,
+    contract_id: int,
+) -> ProviderAssignment:
+    contract = (
+        administered_provider_assignments(actor)
+        .select_for_update(of=("self",))
+        .filter(pk=contract_id, business_id=business_id)
+        .first()
+    )
+    if contract is None:
+        raise PermissionDenied
+    if not contract.is_active:
+        raise ValidationError("El contrato ya está inactivo.")
+    contract.is_active = False
+    contract.save(update_fields=["is_active", "updated_at"])
+    record_privileged_event(
+        actor,
+        "provider_contract.deactivated",
+        contract,
+        {},
+        scope_type="reseller",
+        scope_reference=str(contract.business.reseller_id),
+    )
+    return contract
 
 
 def _require_platform_operator(actor: User) -> None:

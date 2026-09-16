@@ -12,7 +12,7 @@ from django.views.decorators.http import require_http_methods, require_POST, req
 from accounts.models import User
 from audit.services import record_privileged_event
 
-from .forms import DraftForm, PlanForm, ServiceFormSet
+from .forms import DraftForm, PlanAvailabilityForm, PlanForm, ServiceFormSet
 from .models import PROVIDER_PERMANENCE, Plan, PlanVersion
 from .selectors import catalog_resellers, visible_plans
 from .services import (
@@ -20,6 +20,7 @@ from .services import (
     create_draft,
     create_plan,
     publish_draft,
+    set_plan_availability,
     update_draft,
     update_plan,
 )
@@ -74,6 +75,8 @@ def _check_fields(request: HttpRequest, allowed: set[str], target: Plan | PlanVe
         "plan_id",
         "number",
         "published_at",
+        "availability",
+        "businesses",
     }
     if request.method == "POST" and (protected - allowed).intersection(request.POST):
         _rejected_request(request, target)
@@ -147,6 +150,35 @@ def plan_edit(request: HttpRequest, plan_id: int | None = None) -> HttpResponse:
         request,
         "catalog/plan_form.html",
         {"plan": plan, "form": form, "provider_permanence": PROVIDER_PERMANENCE},
+    )
+
+
+@login_required(login_url="landing")
+@never_cache
+@require_http_methods(["GET", "POST"])
+def plan_availability(request: HttpRequest, plan_id: int) -> HttpResponse:
+    plan = _plan(request, plan_id)
+    form = PlanAvailabilityForm(
+        request.POST if request.method == "POST" else None,
+        plan=plan,
+    )
+    if request.method == "POST" and form.is_valid():
+        try:
+            set_plan_availability(
+                actor=cast(User, request.user),
+                plan_id=plan.pk,
+                availability=Plan.Availability(form.cleaned_data["availability"]),
+                business_ids=tuple(form.cleaned_data["businesses"].values_list("pk", flat=True)),
+            )
+        except ValidationError as error:
+            form.add_error(None, error)
+        else:
+            messages.success(request, "Disponibilidad actualizada.")
+            return redirect("catalog:plan-detail", plan_id=plan.pk)
+    return render(
+        request,
+        "catalog/plan_availability.html",
+        {"plan": plan, "form": form},
     )
 
 

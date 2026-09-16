@@ -1,0 +1,12 @@
+{% extends "catalog/base.html" %}
+{% block title %}Disponibilidad de {{ plan.name }} | Picafresa{% endblock %}
+{% block catalog_content %}
+  <h1 id="page-title" tabindex="-1">Disponibilidad de {{ plan.name }}</h1>
+  <p>Elige si este Plan está disponible para todas las empresas del revendedor o solo para una lista explícita.</p>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_div }}
+    <button type="submit">Guardar disponibilidad</button>
+  </form>
+  <p><a href="{{ plan.get_absolute_url }}">Cancelar</a></p>
+{% endblock %}

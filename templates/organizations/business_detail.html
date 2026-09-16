@@ -8,6 +8,7 @@
   <p>Zona horaria: {{ business.timezone }}</p>
   <p><a href="{% url 'organizations:business-edit' business.pk %}">Editar empresa</a></p>
   <h2>Proveedores de la empresa</h2>
+  <p><a href="{% url 'organizations:provider-contract-create' business.pk %}">Crear contrato con Proveedor</a></p>
   <ul class="portfolio-list">
     {% for relationship in page %}
       <li>
@@ -20,6 +21,12 @@
           <dt>Instrucciones de servicio</dt><dd>{{ relationship.effective_service_instructions|default:"Sin registrar"|linebreaksbr }}</dd>
         </dl>
         <a href="{% url 'organizations:provider-edit' business.pk relationship.pk %}">Editar contacto de {{ relationship.provider.name }}</a>
+        {% if relationship.is_active %}
+          <form method="post" action="{% url 'organizations:provider-contract-deactivate' business.pk relationship.pk %}">
+            {% csrf_token %}
+            <button type="submit">Desactivar contrato</button>
+          </form>
+        {% endif %}
       </li>
     {% empty %}
       <li>No hay proveedores disponibles para esta empresa.</li>

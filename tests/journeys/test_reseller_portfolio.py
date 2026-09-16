@@ -414,6 +414,40 @@ class ResellerPortfolioJourneyTests(TestCase):
         self.business.save()
         self.assertContains(self.client.get("/cartera/"), "No hay empresas activas en tu cartera.")
 
+    def test_reseller_creates_and_deactivates_a_provider_contract(self) -> None:
+        available = AssistanceProvider.objects.create(name="Asistencia Nueva")
+        self.client.force_login(self.user)
+        detail_url = f"/cartera/empresas/{self.business.pk}/"
+        form = self.client.get(f"{detail_url}proveedores/nuevo/")
+        self.assertContains(form, "Asistencia Nueva")
+        created = self.client.post(
+            f"{detail_url}proveedores/nuevo/",
+            {"provider": available.pk},
+            follow=True,
+        )
+        self.assertRedirects(created, detail_url)
+        self.assertContains(created, "Asistencia Nueva")
+        contract = self.business.provider_assignments.get(provider=available)
+        deactivated = self.client.post(
+            f"{detail_url}proveedores/{contract.pk}/desactivar/",
+            follow=True,
+        )
+        self.assertRedirects(deactivated, detail_url)
+        self.assertContains(deactivated, "Contrato inactivo")
+        contract.refresh_from_db()
+        self.assertFalse(contract.is_active)
+        provider_employee = User.objects.create_user(
+            email="provider.employee@example.com",
+            email_verified_at=timezone.now(),
+        )
+        create_provider_scope(user=provider_employee, provider_assignment=self.relationship)
+        self.client.force_login(provider_employee)
+        self.assertEqual(self.client.get("/cartera/").status_code, 403)
+        self.assertEqual(
+            self.client.get(f"{detail_url}proveedores/nuevo/").status_code,
+            404,
+        )
+
     def test_rendered_pages_exclude_privileged_fields_and_unrelated_data(self) -> None:
         add_government_identifier(self.user, GovernmentIdentifier.Kind.MX_RFC, "GODE561231GR8")
         AuditEvent.objects.create(

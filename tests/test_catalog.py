@@ -11,7 +11,7 @@ from django.utils import timezone
 
 from accounts.models import User
 from audit.models import AuditEvent
-from catalog.models import Plan, PlanService, PlanVersion
+from catalog.models import Plan, PlanBusinessAvailability, PlanService, PlanVersion
 from catalog.selectors import visible_plans
 from catalog.services import (
     DraftTerms,
@@ -19,10 +19,12 @@ from catalog.services import (
     create_draft,
     create_plan,
     publish_draft,
+    resolve_available_plan_version,
+    set_plan_availability,
     update_draft,
     update_plan,
 )
-from organizations.models import AssistanceProvider, Reseller
+from organizations.models import AssistanceProvider, Business, Reseller
 from tests.builders import (
     create_business,
     create_provider_assignment,
@@ -344,6 +346,108 @@ class PlanServiceTests(TestCase):
         self.assertEqual(
             publish_draft(actor=self.author, version_id=version.pk).status, "published"
         )
+
+    def test_availability_resolves_default_all_and_selected_businesses_with_active_contracts(
+        self,
+    ) -> None:
+        first_business = create_business(name="Empresa Uno", reseller=self.reseller)
+        second_business = create_business(name="Empresa Dos", reseller=self.reseller)
+        first_contract = create_provider_assignment(business=first_business, provider=self.provider)
+        create_provider_assignment(business=second_business, provider=self.provider)
+        plan = create_plan(
+            actor=self.author,
+            reseller_id=self.reseller.pk,
+            provider_id=self.provider.pk,
+            name="Plan Familiar",
+        )
+        version = create_draft(actor=self.author, plan_id=plan.pk, terms=self.terms)
+        publish_draft(actor=self.reviewer, version_id=version.pk)
+
+        self.assertEqual(
+            resolve_available_plan_version(
+                business_id=first_business.pk,
+                plan_id=plan.pk,
+                on_date=date(2026, 10, 1),
+            ),
+            version,
+        )
+        set_plan_availability(
+            actor=self.author,
+            plan_id=plan.pk,
+            availability=Plan.Availability.SELECTED_BUSINESSES,
+            business_ids=(second_business.pk,),
+        )
+        self.assertIsNone(
+            resolve_available_plan_version(
+                business_id=first_business.pk,
+                plan_id=plan.pk,
+                on_date=date(2026, 10, 1),
+            )
+        )
+        self.assertEqual(
+            resolve_available_plan_version(
+                business_id=second_business.pk,
+                plan_id=plan.pk,
+                on_date=date(2026, 10, 1),
+            ),
+            version,
+        )
+        first_contract.is_active = False
+        first_contract.save(update_fields=["is_active"])
+        set_plan_availability(
+            actor=self.author,
+            plan_id=plan.pk,
+            availability=Plan.Availability.ALL_BUSINESSES,
+            business_ids=(),
+        )
+        self.assertIsNone(
+            resolve_available_plan_version(
+                business_id=first_business.pk,
+                plan_id=plan.pk,
+                on_date=date(2026, 10, 1),
+            )
+        )
+
+    def test_availability_rejects_cross_reseller_links_and_non_effective_versions(self) -> None:
+        business = create_business(name="Empresa Norte", reseller=self.reseller)
+        create_provider_assignment(business=business, provider=self.provider)
+        other_reseller = Reseller.objects.create(name="Socio Sur")
+        other_business = create_business(name="Empresa Sur", reseller=other_reseller)
+        plan = create_plan(
+            actor=self.author,
+            reseller_id=self.reseller.pk,
+            provider_id=self.provider.pk,
+            name="Plan Familiar",
+        )
+        version = create_draft(actor=self.author, plan_id=plan.pk, terms=self.terms)
+
+        self.assertIsNone(
+            resolve_available_plan_version(
+                business_id=business.pk,
+                plan_id=plan.pk,
+                on_date=date(2026, 10, 1),
+            )
+        )
+        publish_draft(actor=self.reviewer, version_id=version.pk)
+        self.assertIsNone(
+            resolve_available_plan_version(
+                business_id=business.pk,
+                plan_id=plan.pk,
+                on_date=date(2027, 10, 1),
+            )
+        )
+        with self.assertRaises(ValidationError):
+            set_plan_availability(
+                actor=self.author,
+                plan_id=plan.pk,
+                availability=Plan.Availability.SELECTED_BUSINESSES,
+                business_ids=(other_business.pk,),
+            )
+        with self.assertRaises(DatabaseError), transaction.atomic():
+            PlanBusinessAvailability.objects.create(plan=plan, business=other_business)
+        PlanBusinessAvailability.objects.create(plan=plan, business=business)
+        with self.assertRaises(DatabaseError), transaction.atomic():
+            Business.objects.filter(pk=business.pk).update(reseller=other_reseller)
 
 
 class ConcurrentPlanServiceTests(TransactionTestCase):

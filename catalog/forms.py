@@ -1,10 +1,10 @@
-from typing import Any
+from typing import Any, cast
 
 from django import forms
 from django.forms import formset_factory
 
 from accounts.models import User
-from organizations.models import AssistanceProvider, Reseller
+from organizations.models import AssistanceProvider, Business, Reseller
 
 from .models import PROVIDER_PERMANENCE, Plan
 from .selectors import catalog_resellers
@@ -65,6 +65,29 @@ class DraftForm(forms.Form):
             duration_months=self.cleaned_data["duration_months"],
             coverage_terms=self.cleaned_data["coverage_terms"],
             services=services,
+        )
+
+
+class PlanAvailabilityForm(forms.Form):
+    availability = forms.ChoiceField(label="Disponibilidad", choices=Plan.Availability)
+    businesses = forms.ModelMultipleChoiceField(
+        label="Empresas incluidas",
+        queryset=Business.objects.none(),
+        required=False,
+        help_text="Se usa únicamente cuando eliges empresas seleccionadas.",
+    )
+
+    def __init__(self, *args: Any, plan: Plan, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        businesses = cast("forms.ModelMultipleChoiceField[Business]", self.fields["businesses"])
+        businesses.queryset = Business.objects.filter(
+            reseller_id=plan.reseller_id,
+            is_active=True,
+            deleted_at__isnull=True,
+        )
+        self.initial.update(
+            availability=plan.availability,
+            businesses=plan.selected_businesses.all(),
         )
 
 
