@@ -14,13 +14,17 @@ from audit.models import AuditEvent
 from catalog.models import Plan, PlanBusinessAvailability, PlanService, PlanVersion
 from catalog.selectors import visible_plans
 from catalog.services import (
+    CoveragePresentation,
     DraftTerms,
     ServiceTerms,
     create_draft,
     create_plan,
+    member_coverage_contents,
     publish_draft,
     resolve_available_plan_version,
     set_plan_availability,
+    update_coverage_notes,
+    update_coverage_presentation,
     update_draft,
     update_plan,
 )
@@ -53,13 +57,29 @@ class PlanServiceTests(TestCase):
         )
 
     def test_reseller_prepares_owned_plan_and_versioned_member_services(self) -> None:
+        terms = replace(
+            self.terms,
+            services=(
+                ServiceTerms(
+                    name="Ambulancia",
+                    coverage_terms="Traslado local.",
+                    service_channels=("call_center",),
+                    limit_text="Hasta dos eventos durante la vigencia.",
+                ),
+                ServiceTerms(
+                    name="Consulta médica",
+                    coverage_terms="Orientación remota.",
+                    service_channels=("online", "call_center"),
+                ),
+            ),
+        )
         plan = create_plan(
             actor=self.author,
             reseller_id=self.reseller.pk,
             provider_id=self.provider.pk,
             name="Plan Familiar",
         )
-        version = create_draft(actor=self.author, plan_id=plan.pk, terms=self.terms)
+        version = create_draft(actor=self.author, plan_id=plan.pk, terms=terms)
 
         saved = visible_plans(self.author).get(pk=plan.pk)
         self.assertEqual(saved.reseller_id, self.reseller.pk)
@@ -73,8 +93,27 @@ class PlanServiceTests(TestCase):
         self.assertEqual(version.duration_months, 12)
         self.assertEqual(version.coverage_terms, "Asistencia familiar durante la vigencia.")
         self.assertEqual(
-            list(version.services.values_list("name", "coverage_terms")),
-            [("Consulta médica", "Orientación telefónica.")],
+            list(
+                version.services.values_list(
+                    "position", "name", "coverage_terms", "service_channels", "limit_text"
+                )
+            ),
+            [
+                (
+                    1,
+                    "Ambulancia",
+                    "Traslado local.",
+                    ["call_center"],
+                    "Hasta dos eventos durante la vigencia.",
+                ),
+                (
+                    2,
+                    "Consulta médica",
+                    "Orientación remota.",
+                    ["online", "call_center"],
+                    "",
+                ),
+            ],
         )
 
     def test_publication_requires_another_authorized_actor_and_keeps_safe_evidence(self) -> None:
@@ -101,6 +140,118 @@ class PlanServiceTests(TestCase):
         self.assertEqual(evidence.actor_id, self.reviewer.pk)
         self.assertEqual(evidence.active_scope_reference, str(self.reseller.pk))
         self.assertEqual(evidence.changes, {"number": 1})
+
+    def test_authorized_operator_updates_internal_notes_after_publication_with_safe_evidence(
+        self,
+    ) -> None:
+        plan = create_plan(
+            actor=self.author,
+            reseller_id=self.reseller.pk,
+            provider_id=self.provider.pk,
+            name="Plan Familiar",
+        )
+        version = create_draft(actor=self.author, plan_id=plan.pk, terms=self.terms)
+        publish_draft(actor=self.reviewer, version_id=version.pk)
+        coverage = version.services.get()
+
+        updated = update_coverage_notes(
+            actor=self.author,
+            service_id=coverage.pk,
+            internal_notes="Despachar con Central Norte al 55 0000 0000.",
+        )
+
+        self.assertEqual(updated.internal_notes, "Despachar con Central Norte al 55 0000 0000.")
+        self.assertEqual(updated.name, "Consulta médica")
+        self.assertEqual(updated.coverage_terms, "Orientación telefónica.")
+        evidence = AuditEvent.objects.get(action="plan.coverage_notes_updated")
+        self.assertEqual(evidence.changes, {"fields": ["internal_notes"]})
+        self.assertNotIn("Central Norte", str(evidence.changes))
+
+    def test_presentation_defaults_hidden_and_remains_mutable_after_publication(self) -> None:
+        plan = create_plan(
+            actor=self.author,
+            reseller_id=self.reseller.pk,
+            provider_id=self.provider.pk,
+            name="Plan Familiar",
+        )
+        version = create_draft(actor=self.author, plan_id=plan.pk, terms=self.terms)
+        publish_draft(actor=self.reviewer, version_id=version.pk)
+        coverage = version.services.get()
+        self.assertFalse(coverage.presentation_visible)
+
+        updated = update_coverage_presentation(
+            actor=self.author,
+            service_id=coverage.pk,
+            presentation=CoveragePresentation(
+                public_description="Atención médica desde cualquier lugar.",
+                marketing_text="Tu salud, siempre cerca.",
+                visible=True,
+            ),
+        )
+
+        self.assertEqual(updated.public_description, "Atención médica desde cualquier lugar.")
+        self.assertEqual(updated.marketing_text, "Tu salud, siempre cerca.")
+        self.assertTrue(updated.presentation_visible)
+        self.assertEqual(updated.coverage_terms, "Orientación telefónica.")
+        evidence = AuditEvent.objects.get(action="plan.coverage_presentation_updated")
+        self.assertEqual(
+            evidence.changes,
+            {
+                "fields": ["marketing_text", "presentation_visible", "public_description"],
+                "visible": True,
+            },
+        )
+        self.assertNotIn("Tu salud", str(evidence.changes))
+
+    def test_member_coverage_projection_keeps_entitlements_independent_of_visibility(
+        self,
+    ) -> None:
+        plan = create_plan(
+            actor=self.author,
+            reseller_id=self.reseller.pk,
+            provider_id=self.provider.pk,
+            name="Plan Familiar",
+        )
+        version = create_draft(
+            actor=self.author,
+            plan_id=plan.pk,
+            terms=replace(
+                self.terms,
+                services=(
+                    ServiceTerms("Ambulancia", "Traslado local.", ("call_center",)),
+                    ServiceTerms("Consulta", "Orientación.", ("online",)),
+                ),
+            ),
+        )
+        ambulance, consultation = version.services.all()
+        update_coverage_notes(
+            actor=self.author,
+            service_id=consultation.pk,
+            internal_notes="Contacto interno confidencial.",
+        )
+        update_coverage_presentation(
+            actor=self.author,
+            service_id=consultation.pk,
+            presentation=CoveragePresentation(
+                public_description="Consulta desde casa.",
+                marketing_text="Siempre cerca.",
+                visible=True,
+                image_reference="catalog/coverage-images/consulta.png",
+            ),
+        )
+
+        contents = member_coverage_contents(version_id=version.pk)
+
+        self.assertEqual([coverage.name for coverage in contents], ["Ambulancia", "Consulta"])
+        self.assertEqual(contents[0].public_description, "")
+        self.assertFalse(contents[0].presentation_visible)
+        self.assertEqual(contents[1].public_description, "Consulta desde casa.")
+        self.assertTrue(contents[1].presentation_visible)
+        self.assertEqual(contents[1].coverage_terms, "Orientación.")
+        self.assertEqual(contents[1].service_channels, ("online",))
+        self.assertEqual(contents[1].image_reference, "catalog/coverage-images/consulta.png")
+        self.assertFalse(hasattr(contents[1], "internal_notes"))
+        self.assertEqual(ambulance.position, 1)
 
     def test_author_edits_only_drafts_and_new_versions_preserve_published_terms(self) -> None:
         plan = create_plan(
@@ -194,6 +345,12 @@ class PlanServiceTests(TestCase):
             lambda: PlanVersion.objects.filter(pk=version.pk).update(duration_months=3),
             lambda: PlanVersion.objects.filter(pk=version.pk).update(status="draft"),
             lambda: PlanService.objects.filter(pk=service.pk).update(name="Cambio"),
+            lambda: PlanService.objects.filter(pk=service.pk).update(position=2),
+            lambda: PlanService.objects.filter(pk=service.pk).update(coverage_terms="Cambio"),
+            lambda: PlanService.objects.filter(pk=service.pk).update(
+                service_channels=["call_center"]
+            ),
+            lambda: PlanService.objects.filter(pk=service.pk).update(limit_text="Cambio"),
             lambda: PlanService.objects.filter(pk=service.pk).delete(),
             lambda: PlanService.objects.create(
                 version=version, name="Extra", coverage_terms="Extra"
@@ -211,6 +368,16 @@ class PlanServiceTests(TestCase):
         version.duration_months = 3
         with self.assertRaises(DatabaseError), transaction.atomic():
             version.save()
+        PlanService.objects.filter(pk=service.pk).update(
+            internal_notes="Nueva instrucción.",
+            public_description="Nueva presentación.",
+            marketing_text="Nuevo mensaje.",
+            image_reference="catalog/coverage-images/nueva.png",
+            presentation_visible=True,
+        )
+        service.refresh_from_db()
+        self.assertEqual(service.internal_notes, "Nueva instrucción.")
+        self.assertTrue(service.presentation_visible)
 
     def test_out_of_scope_creation_is_rejected_and_audited_without_submitted_values(self) -> None:
         other = Reseller.objects.create(name="Socio Sur")
@@ -254,6 +421,43 @@ class PlanServiceTests(TestCase):
         saved = visible_plans(self.author).get(pk=plan.pk).versions.get(pk=version.pk)
         self.assertEqual(list(saved.services.values_list("name", flat=True)), ["Consulta médica"])
 
+    def test_service_channels_reject_empty_and_unsupported_values_in_services_and_database(
+        self,
+    ) -> None:
+        plan = create_plan(
+            actor=self.author,
+            reseller_id=self.reseller.pk,
+            provider_id=self.provider.pk,
+            name="Plan Familiar",
+        )
+        for channels in ((), ("fax",)):
+            with self.subTest(channels=channels), self.assertRaises(ValidationError):
+                create_draft(
+                    actor=self.author,
+                    plan_id=plan.pk,
+                    terms=replace(
+                        self.terms,
+                        services=(
+                            ServiceTerms(
+                                "Consulta",
+                                "Orientación.",
+                                channels,
+                            ),
+                        ),
+                    ),
+                )
+        version = create_draft(actor=self.author, plan_id=plan.pk, terms=self.terms)
+        coverage = version.services.get()
+        for database_channels in ([], ["fax"]):
+            with (
+                self.subTest(channels=database_channels),
+                self.assertRaises(DatabaseError),
+                transaction.atomic(),
+            ):
+                PlanService.objects.filter(pk=coverage.pk).update(
+                    service_channels=database_channels
+                )
+
     def test_composable_non_reseller_roles_never_authorize_catalog_operations(self) -> None:
         plan = create_plan(
             actor=self.author,
@@ -282,11 +486,21 @@ class PlanServiceTests(TestCase):
             lambda: update_plan(
                 actor=outsider, plan_id=plan.pk, name="Intrusion", provider_id=self.provider.pk
             ),
+            lambda: update_coverage_notes(
+                actor=outsider,
+                service_id=version.services.get().pk,
+                internal_notes="Intrusión",
+            ),
+            lambda: update_coverage_presentation(
+                actor=outsider,
+                service_id=version.services.get().pk,
+                presentation=CoveragePresentation("", "", True),
+            ),
         )
         for operate in operations:
             with self.subTest(operation=operate), self.assertRaises(PermissionDenied):
                 operate()
-        self.assertEqual(AuditEvent.objects.filter(action="plan.rejected").count(), 4)
+        self.assertEqual(AuditEvent.objects.filter(action="plan.rejected").count(), 6)
 
     def test_inactive_scopes_and_providers_block_changes_but_operators_retain_history(self) -> None:
         operator = User.objects.create_superuser(email="operator@example.test")

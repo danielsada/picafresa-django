@@ -16,6 +16,16 @@ urlpatterns = [
     ),
     path("<int:plan_id>/versiones/nueva/", views.draft_edit, name="draft-create"),
     path("versiones/<int:version_id>/", views.version_detail, name="version-detail"),
+    path(
+        "coberturas/<int:service_id>/gestionar/",
+        views.coverage_manage,
+        name="coverage-manage",
+    ),
+    path(
+        "atencion/empresas/<int:business_id>/coberturas/<int:service_id>/",
+        views.coverage_servicing,
+        name="coverage-servicing",
+    ),
     path("versiones/<int:version_id>/editar/", views.draft_edit, name="draft-edit"),
     path("versiones/<int:version_id>/publicar/", views.version_publish, name="version-publish"),
 ]

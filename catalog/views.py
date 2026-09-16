@@ -4,29 +4,41 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
+from django.utils import timezone
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_http_methods, require_POST, require_safe
 
 from accounts.models import User
 from audit.services import record_privileged_event
 
-from .forms import DraftForm, PlanAvailabilityForm, PlanForm, ServiceFormSet
-from .models import PROVIDER_PERMANENCE, Plan, PlanVersion
+from .forms import (
+    CoverageManagementForm,
+    DraftForm,
+    PlanAvailabilityForm,
+    PlanForm,
+    ServiceFormSet,
+)
+from .models import PROVIDER_PERMANENCE, Plan, PlanService, PlanVersion
 from .selectors import catalog_resellers, visible_plans
 from .services import (
+    CoveragePresentation,
     ServiceTerms,
+    coverage_for_servicing,
     create_draft,
     create_plan,
     publish_draft,
     set_plan_availability,
+    update_coverage_notes,
+    update_coverage_presentation,
     update_draft,
     update_plan,
 )
 
 
-def _rejected_request(request: HttpRequest, target: Plan | PlanVersion) -> None:
+def _rejected_request(request: HttpRequest, target: Plan | PlanService | PlanVersion) -> None:
     record_privileged_event(
         cast(User, request.user),
         "plan.rejected",
@@ -58,7 +70,27 @@ def _version(request: HttpRequest, version_id: int) -> PlanVersion:
     return version
 
 
-def _check_fields(request: HttpRequest, allowed: set[str], target: Plan | PlanVersion) -> None:
+def _coverage(request: HttpRequest, service_id: int) -> PlanService:
+    coverage = (
+        PlanService.objects.select_related("version__plan")
+        .filter(
+            pk=service_id,
+            version__plan__in=visible_plans(cast(User, request.user)),
+        )
+        .first()
+    )
+    if coverage is None:
+        if request.method == "POST":
+            _rejected_request(request, PlanService(pk=service_id))
+        raise Http404
+    return coverage
+
+
+def _check_fields(
+    request: HttpRequest,
+    allowed: set[str],
+    target: Plan | PlanService | PlanVersion,
+) -> None:
     protected = {
         "reseller",
         "reseller_id",
@@ -77,6 +109,13 @@ def _check_fields(request: HttpRequest, allowed: set[str], target: Plan | PlanVe
         "published_at",
         "availability",
         "businesses",
+        "version",
+        "version_id",
+        "position",
+        "name",
+        "coverage_terms",
+        "service_channels",
+        "limit_text",
     }
     if request.method == "POST" and (protected - allowed).intersection(request.POST):
         _rejected_request(request, target)
@@ -193,13 +232,73 @@ def version_detail(request: HttpRequest, version_id: int) -> HttpResponse:
 @login_required(login_url="landing")
 @never_cache
 @require_http_methods(["GET", "POST"])
+def coverage_manage(request: HttpRequest, service_id: int) -> HttpResponse:
+    coverage = _coverage(request, service_id)
+    form = CoverageManagementForm(
+        request.POST if request.method == "POST" else None,
+        coverage=coverage,
+    )
+    _check_fields(request, set(form.fields), coverage)
+    if request.method == "POST" and form.is_valid():
+        with transaction.atomic():
+            update_coverage_notes(
+                actor=cast(User, request.user),
+                service_id=coverage.pk,
+                internal_notes=form.cleaned_data["internal_notes"],
+            )
+            update_coverage_presentation(
+                actor=cast(User, request.user),
+                service_id=coverage.pk,
+                presentation=CoveragePresentation(
+                    public_description=form.cleaned_data["public_description"],
+                    marketing_text=form.cleaned_data["marketing_text"],
+                    image_reference=form.cleaned_data["image_reference"],
+                    visible=form.cleaned_data["presentation_visible"],
+                ),
+            )
+        messages.success(request, "Contenido mutable de la cobertura actualizado.")
+        return redirect("catalog:version-detail", version_id=coverage.version_id)
+    return render(
+        request,
+        "catalog/coverage_manage.html",
+        {"coverage": coverage, "form": form},
+    )
+
+
+@login_required(login_url="landing")
+@never_cache
+@require_safe
+def coverage_servicing(
+    request: HttpRequest,
+    business_id: int,
+    service_id: int,
+) -> HttpResponse:
+    try:
+        servicing = coverage_for_servicing(
+            actor=cast(User, request.user),
+            business_id=business_id,
+            service_id=service_id,
+            on_date=timezone.localdate(),
+        )
+    except PermissionDenied as error:
+        raise Http404 from error
+    return render(
+        request,
+        "catalog/coverage_servicing.html",
+        {"servicing": servicing},
+    )
+
+
+@login_required(login_url="landing")
+@never_cache
+@require_http_methods(["GET", "POST"])
 def draft_edit(
     request: HttpRequest, plan_id: int | None = None, version_id: int | None = None
 ) -> HttpResponse:
     actor = cast(User, request.user)
     version = _version(request, version_id) if version_id is not None else None
     plan = version.plan if version is not None else _plan(request, cast(int, plan_id))
-    _check_fields(request, set(), version or plan)
+    _check_fields(request, {"coverage_terms"}, version or plan)
     if version is not None:
         if version.status != PlanVersion.Status.DRAFT:
             if request.method == "POST":
@@ -219,7 +318,9 @@ def draft_edit(
             "duration_months": version.duration_months,
             "coverage_terms": version.coverage_terms,
         }
-        initial_services = list(version.services.values("name", "coverage_terms"))
+        initial_services = list(
+            version.services.values("name", "coverage_terms", "service_channels", "limit_text")
+        )
     data = request.POST if request.method == "POST" else None
     form = DraftForm(data, initial=initial)
     services = ServiceFormSet(data, initial=initial_services, prefix="services")
@@ -234,7 +335,12 @@ def draft_edit(
         else:
             terms = form.terms(
                 tuple(
-                    ServiceTerms(name=row["name"], coverage_terms=row["coverage_terms"])
+                    ServiceTerms(
+                        name=row["name"],
+                        coverage_terms=row["coverage_terms"],
+                        service_channels=tuple(row["service_channels"]),
+                        limit_text=row["limit_text"],
+                    )
                     for row in services.cleaned_data
                     if row and not row.get("DELETE")
                 )

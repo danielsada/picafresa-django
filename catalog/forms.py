@@ -6,7 +6,12 @@ from django.forms import formset_factory
 from accounts.models import User
 from organizations.models import AssistanceProvider, Business, Reseller
 
-from .models import PROVIDER_PERMANENCE, Plan
+from .models import (
+    PROVIDER_PERMANENCE,
+    Plan,
+    PlanService,
+    validate_coverage_image_reference,
+)
 from .selectors import catalog_resellers
 from .services import DraftTerms, ServiceTerms
 
@@ -94,6 +99,55 @@ class PlanAvailabilityForm(forms.Form):
 class ServiceForm(forms.Form):
     name = forms.CharField(label="Servicio para el Afiliado", max_length=200)
     coverage_terms = forms.CharField(label="Condiciones del servicio", widget=forms.Textarea)
+    service_channels = forms.MultipleChoiceField(
+        label="Canales para solicitar el servicio",
+        choices=PlanService.ServiceChannel,
+        widget=forms.CheckboxSelectMultiple,
+    )
+    limit_text = forms.CharField(
+        label="Límites o condiciones para el Afiliado",
+        widget=forms.Textarea,
+        required=False,
+    )
+
+
+class CoverageManagementForm(forms.Form):
+    internal_notes = forms.CharField(
+        label="Notas internas de atención",
+        widget=forms.Textarea,
+        required=False,
+    )
+    public_description = forms.CharField(
+        label="Descripción pública",
+        widget=forms.Textarea,
+        required=False,
+    )
+    marketing_text = forms.CharField(
+        label="Texto de marketing",
+        widget=forms.Textarea,
+        required=False,
+    )
+    image_reference = forms.CharField(
+        label="Referencia de imagen",
+        max_length=500,
+        required=False,
+        help_text="Ruta aprobada bajo catalog/coverage-images/ en formato JPG, PNG o WebP.",
+        validators=(validate_coverage_image_reference,),
+    )
+    presentation_visible = forms.BooleanField(
+        label="Visible para Afiliados",
+        required=False,
+    )
+
+    def __init__(self, *args: Any, coverage: PlanService, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.initial.update(
+            internal_notes=coverage.internal_notes,
+            public_description=coverage.public_description,
+            marketing_text=coverage.marketing_text,
+            image_reference=coverage.image_reference,
+            presentation_visible=coverage.presentation_visible,
+        )
 
 
 ServiceFormSet = formset_factory(

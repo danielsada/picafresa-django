@@ -12,7 +12,29 @@
   <h2>Servicios para el Afiliado</h2>
   <ul class="portfolio-list">
     {% for service in version.services.all %}
-      <li><h3>{{ service.name }}</h3>{{ service.coverage_terms|linebreaks }}</li>
+      <li>
+        <h3>{{ service.name }}</h3>
+        {{ service.coverage_terms|linebreaks }}
+        <p>Canales:
+          {% for channel in service.service_channel_labels %}
+            {{ channel }}{% if not forloop.last %}, {% endif %}
+          {% endfor %}
+        </p>
+        {% if service.limit_text %}
+          <h4>Límites o condiciones</h4>
+          {{ service.limit_text|linebreaks }}
+        {% endif %}
+        {% if service.presentation_visible %}
+          {% if service.public_description %}{{ service.public_description|linebreaks }}{% endif %}
+          {% if service.marketing_text %}{{ service.marketing_text|linebreaks }}{% endif %}
+          {% if service.image_reference %}<p>Imagen: {{ service.image_reference }}</p>{% endif %}
+        {% endif %}
+        <p>
+          <a href="{% url 'catalog:coverage-manage' service.pk %}">
+            Gestionar atención y presentación
+          </a>
+        </p>
+      </li>
     {% endfor %}
   </ul>
   {% if version.status == "draft" %}

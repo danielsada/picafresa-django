@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Atender cobertura | Picafresa{% endblock %}
+{% block content %}
+  <section class="portfolio" aria-labelledby="page-title">
+    <h1 id="page-title" tabindex="-1">Atender cobertura · {{ servicing.coverage.name }}</h1>
+    <p>Empresa: {{ servicing.business_name }}</p>
+    <p>Proveedor: {{ servicing.provider_name }}</p>
+    <h2>Condiciones para el Afiliado</h2>
+    {{ servicing.coverage.coverage_terms|linebreaks }}
+    <p>Canales:
+      {% for channel in servicing.coverage.service_channels %}
+        {{ channel }}{% if not forloop.last %}, {% endif %}
+      {% endfor %}
+    </p>
+    {% if servicing.coverage.limit_text %}
+      <h2>Límites o condiciones</h2>
+      {{ servicing.coverage.limit_text|linebreaks }}
+    {% endif %}
+    <h2>Notas internas de atención</h2>
+    {{ servicing.internal_notes|linebreaks }}
+    <p><a href="{% url 'account-home' %}">Volver a mi cuenta</a></p>
+  </section>
+{% endblock %}

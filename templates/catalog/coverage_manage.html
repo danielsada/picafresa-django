@@ -1,0 +1,15 @@
+{% extends "catalog/base.html" %}
+{% block title %}Gestionar cobertura | Picafresa{% endblock %}
+{% block catalog_content %}
+  <h1 id="page-title" tabindex="-1">Gestionar cobertura · {{ coverage.name }}</h1>
+  <p>
+    Las condiciones, canales, límites y posición publicados son inmutables.
+    Estas notas y datos de presentación no cambian el derecho a la cobertura.
+  </p>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Guardar contenido mutable</button>
+  </form>
+  <p><a href="{% url 'catalog:version-detail' coverage.version_id %}">Volver a la versión</a></p>
+{% endblock %}

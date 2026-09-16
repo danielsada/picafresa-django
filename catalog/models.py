@@ -1,4 +1,8 @@
+import re
+from pathlib import PurePosixPath
+
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator, RegexValidator
 from django.db import models
 from django.db.models import F, Q
@@ -10,6 +14,30 @@ PROVIDER_PERMANENCE = (
     "El Proveedor es permanente. Para cambiarlo debes crear un nuevo Plan; "
     "las versiones anteriores conservan su Proveedor."
 )
+
+
+def validate_service_channels(value: object) -> None:
+    allowed = {choice.value for choice in PlanService.ServiceChannel}
+    if (
+        not isinstance(value, list)
+        or not value
+        or any(not isinstance(channel, str) or channel not in allowed for channel in value)
+        or len(value) != len(set(value))
+    ):
+        raise ValidationError("Selecciona uno o más canales de servicio válidos.")
+
+
+def validate_coverage_image_reference(value: str) -> None:
+    path = PurePosixPath(value)
+    valid = re.fullmatch(
+        r"catalog/coverage-images/[A-Za-z0-9][A-Za-z0-9._/-]*\.(?:jpe?g|png|webp)",
+        value,
+        flags=re.IGNORECASE,
+    )
+    if path.is_absolute() or ".." in path.parts or valid is None:
+        raise ValidationError(
+            "Usa una referencia de imagen válida del almacenamiento de coberturas."
+        )
 
 
 class Plan(models.Model):
@@ -174,16 +202,61 @@ class PlanVersion(models.Model):
 
 
 class PlanService(models.Model):
+    class ServiceChannel(models.TextChoices):
+        ONLINE = "online", "En línea"
+        CALL_CENTER = "call_center", "Centro de atención telefónica"
+
     version = models.ForeignKey(
         PlanVersion, on_delete=models.PROTECT, related_name="services", verbose_name="versión"
     )
+    position = models.PositiveSmallIntegerField("posición")
     name = models.CharField("servicio para el Afiliado", max_length=200)
     coverage_terms = models.TextField("condiciones del servicio")
+    service_channels = models.JSONField(
+        "canales de servicio",
+        validators=(validate_service_channels,),
+    )
+    limit_text = models.TextField("límites o condiciones para el Afiliado", blank=True)
+    internal_notes = models.TextField("notas internas de atención", blank=True)
+    public_description = models.TextField("descripción pública", blank=True)
+    marketing_text = models.TextField("texto de marketing", blank=True)
+    image_reference = models.CharField(
+        "referencia de imagen",
+        max_length=500,
+        blank=True,
+        validators=(validate_coverage_image_reference,),
+    )
+    presentation_visible = models.BooleanField("presentación visible", default=False)
 
     class Meta:
-        ordering = ("pk",)
+        ordering = ("position", "pk")
         verbose_name = "servicio de Plan"
         verbose_name_plural = "servicios de Plan"
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(position__gt=0),
+                name="ck_plan_service_positive_position",
+            ),
+            models.UniqueConstraint(
+                fields=("version", "position"),
+                name="uq_plan_service_version_position",
+            ),
+            models.CheckConstraint(
+                condition=Q(
+                    service_channels__0__isnull=False,
+                    service_channels__contained_by=[
+                        "online",
+                        "call_center",
+                    ],
+                ),
+                name="ck_plan_service_supported_channels",
+            ),
+        ]
 
     def __str__(self) -> str:
         return self.name
+
+    @property
+    def service_channel_labels(self) -> list[str]:
+        labels = dict(self.ServiceChannel.choices)
+        return [labels[channel] for channel in self.service_channels]

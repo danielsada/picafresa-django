@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 from django.test import Client, TestCase
@@ -8,7 +8,14 @@ from django.utils import timezone
 from accounts.models import User
 from audit.models import AuditEvent
 from catalog.models import Plan
-from catalog.services import DraftTerms, ServiceTerms, create_draft, create_plan
+from catalog.services import (
+    DraftTerms,
+    ServiceTerms,
+    create_draft,
+    create_plan,
+    publish_draft,
+    update_coverage_notes,
+)
 from organizations.models import AssistanceProvider, Reseller
 from tests.builders import (
     create_business,
@@ -41,8 +48,12 @@ class PlanJourneyTests(TestCase):
             "services-INITIAL_FORMS": "0",
             "services-0-name": "Consulta médica",
             "services-0-coverage_terms": "Orientación telefónica.",
+            "services-0-service_channels": ["online", "call_center"],
+            "services-0-limit_text": "Sin límite durante la vigencia.",
             "services-1-name": "Ambulancia",
             "services-1-coverage_terms": "Traslado local.",
+            "services-1-service_channels": ["call_center"],
+            "services-1-limit_text": "",
         }
 
     def test_reseller_drafts_and_another_administrator_publishes_in_spanish(self) -> None:
@@ -69,6 +80,9 @@ class PlanJourneyTests(TestCase):
         version_url = draft.redirect_chain[0][0]
         self.assertContains(draft, "Borrador")
         self.assertContains(draft, "Consulta médica")
+        self.assertContains(draft, "En línea")
+        self.assertContains(draft, "Centro de atención telefónica")
+        self.assertContains(draft, "Sin límite durante la vigencia.")
         self.assertContains(draft, "Otra persona autorizada")
         self.assertEqual(self.client.post(f"{version_url}publicar/").status_code, 403)
         self.client.force_login(self.reviewer)
@@ -126,6 +140,82 @@ class PlanJourneyTests(TestCase):
         evidence = self.client.get(reverse("admin:audit_auditevent_changelist"))
         self.assertContains(evidence, "plan.published")
         self.assertTrue(AuditEvent.objects.filter(action="plan.rejected", actor=operator).exists())
+
+    def test_reseller_updates_servicing_and_presentation_without_changing_published_terms(
+        self,
+    ) -> None:
+        plan = create_plan(
+            actor=self.author,
+            reseller_id=self.reseller.pk,
+            provider_id=self.provider.pk,
+            name="Plan Familiar",
+        )
+        version = create_draft(
+            actor=self.author,
+            plan_id=plan.pk,
+            terms=DraftTerms(
+                date(2026, 10, 1),
+                date(2027, 10, 1),
+                12,
+                "Cobertura familiar.",
+                (
+                    ServiceTerms(
+                        "Consulta médica",
+                        "Orientación telefónica.",
+                        ("online", "call_center"),
+                        "Sin límite durante la vigencia.",
+                    ),
+                ),
+            ),
+        )
+        publish_draft(actor=self.reviewer, version_id=version.pk)
+        coverage = version.services.get()
+        manage_url = f"/planes/coberturas/{coverage.pk}/gestionar/"
+        self.client.force_login(self.author)
+
+        page = self.client.get(manage_url)
+        self.assertContains(page, "Notas internas de atención")
+        self.assertContains(page, "Visible para Afiliados")
+        invalid = self.client.post(
+            manage_url,
+            {
+                "internal_notes": "Despachar con Central Norte.",
+                "public_description": "Atención desde cualquier lugar.",
+                "marketing_text": "Tu salud, siempre cerca.",
+                "image_reference": "data:image/png;base64,private",
+                "presentation_visible": "on",
+            },
+        )
+        self.assertContains(invalid, "referencia de imagen")
+        saved = self.client.post(
+            manage_url,
+            {
+                "internal_notes": "Despachar con Central Norte.",
+                "public_description": "Atención desde cualquier lugar.",
+                "marketing_text": "Tu salud, siempre cerca.",
+                "image_reference": "catalog/coverage-images/consulta.webp",
+                "presentation_visible": "on",
+            },
+            follow=True,
+        )
+        self.assertContains(saved, "Atención desde cualquier lugar.")
+        self.assertContains(saved, "Tu salud, siempre cerca.")
+        self.assertNotContains(saved, "Despachar con Central Norte.")
+        coverage.refresh_from_db()
+        self.assertEqual(coverage.coverage_terms, "Orientación telefónica.")
+        self.assertEqual(coverage.service_channels, ["online", "call_center"])
+        self.assertEqual(coverage.limit_text, "Sin límite durante la vigencia.")
+        self.assertEqual(coverage.internal_notes, "Despachar con Central Norte.")
+        self.assertEqual(coverage.image_reference, "catalog/coverage-images/consulta.webp")
+        evidence = AuditEvent.objects.filter(
+            action__in=(
+                "plan.coverage_notes_updated",
+                "plan.coverage_presentation_updated",
+            )
+        )
+        self.assertEqual(evidence.count(), 2)
+        self.assertNotIn("Central Norte", str(list(evidence.values_list("changes", flat=True))))
+        self.assertNotIn("Tu salud", str(list(evidence.values_list("changes", flat=True))))
 
     def test_cross_portfolio_and_forged_privileged_requests_leave_safe_evidence(self) -> None:
         plan = create_plan(
@@ -194,6 +284,66 @@ class PlanJourneyTests(TestCase):
             "sensitive-attack-value", str(list(events.values_list("changes", flat=True)))
         )
         self.assertContains(self.client.get(plan_url), "Asistencia Norte")
+
+    def test_provider_employee_sees_internal_notes_only_in_an_eligible_servicing_context(
+        self,
+    ) -> None:
+        business = create_business(name="Empresa Norte", reseller=self.reseller)
+        assignment = create_provider_assignment(business=business, provider=self.provider)
+        provider_employee = User.objects.create_user(
+            email="provider@example.test", email_verified_at=timezone.now()
+        )
+        create_provider_scope(
+            user=provider_employee,
+            provider_assignment=assignment,
+        )
+        plan = create_plan(
+            actor=self.author,
+            reseller_id=self.reseller.pk,
+            provider_id=self.provider.pk,
+            name="Plan Familiar",
+        )
+        today = timezone.localdate()
+        version = create_draft(
+            actor=self.author,
+            plan_id=plan.pk,
+            terms=DraftTerms(
+                today - timedelta(days=1),
+                today + timedelta(days=365),
+                12,
+                "Cobertura familiar.",
+                (
+                    ServiceTerms(
+                        "Consulta médica",
+                        "Orientación telefónica.",
+                        ("online", "call_center"),
+                    ),
+                ),
+            ),
+        )
+        publish_draft(actor=self.reviewer, version_id=version.pk)
+        coverage = version.services.get()
+        update_coverage_notes(
+            actor=self.author,
+            service_id=coverage.pk,
+            internal_notes="Llamar a Central Norte y citar el convenio 42.",
+        )
+        servicing_url = f"/planes/atencion/empresas/{business.pk}/coberturas/{coverage.pk}/"
+
+        self.client.force_login(provider_employee)
+        page = self.client.get(servicing_url)
+        self.assertContains(page, "Consulta médica")
+        self.assertContains(page, "Orientación telefónica.")
+        self.assertContains(page, "Llamar a Central Norte y citar el convenio 42.")
+        outsider = User.objects.create_user(
+            email="outsider-provider@example.test", email_verified_at=timezone.now()
+        )
+        self.client.force_login(outsider)
+        self.assertEqual(self.client.get(servicing_url).status_code, 404)
+        assignment.is_active = False
+        assignment.save(update_fields=["is_active"])
+        self.client.force_login(provider_employee)
+        self.assertEqual(self.client.get(servicing_url).status_code, 404)
 
     def test_cross_reseller_creation_rejected_by_form_is_still_audited(self) -> None:
         other = Reseller.objects.create(name="Socio Sur")

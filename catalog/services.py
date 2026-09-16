@@ -11,7 +11,12 @@ from django.utils import timezone
 
 from accounts.models import User
 from audit.services import record_privileged_event
-from organizations.models import AssistanceProvider, Business, ProviderAssignment
+from organizations.models import (
+    AssistanceProvider,
+    Business,
+    ProviderAssignment,
+    ScopedAssignment,
+)
 
 from .models import (
     PROVIDER_PERMANENCE,
@@ -27,6 +32,8 @@ from .selectors import catalog_resellers, visible_plans
 class ServiceTerms:
     name: str
     coverage_terms: str
+    service_channels: tuple[str, ...] = (PlanService.ServiceChannel.ONLINE,)
+    limit_text: str = ""
 
 
 @dataclass(frozen=True)
@@ -38,8 +45,40 @@ class DraftTerms:
     services: tuple[ServiceTerms, ...]
 
 
+@dataclass(frozen=True)
+class CoveragePresentation:
+    public_description: str
+    marketing_text: str
+    visible: bool
+    image_reference: str = ""
+
+
+@dataclass(frozen=True)
+class MemberCoverage:
+    id: int
+    position: int
+    name: str
+    coverage_terms: str
+    service_channels: tuple[str, ...]
+    limit_text: str
+    presentation_visible: bool
+    public_description: str
+    marketing_text: str
+    image_reference: str
+
+
+@dataclass(frozen=True)
+class ServicingCoverage:
+    business_name: str
+    provider_name: str
+    coverage: MemberCoverage
+    internal_notes: str
+
+
 @contextmanager
-def _catalog_change(actor: User, target: Plan | PlanVersion, operation: str) -> Iterator[None]:
+def _catalog_change(
+    actor: User, target: Plan | PlanService | PlanVersion, operation: str
+) -> Iterator[None]:
     try:
         with transaction.atomic():
             yield
@@ -169,9 +208,14 @@ def _save_terms(version: PlanVersion, terms: DraftTerms) -> None:
     version.coverage_terms = terms.coverage_terms
     version.full_clean()
     version.save()
-    for terms_service in terms.services:
+    for position, terms_service in enumerate(terms.services, start=1):
         service = PlanService(
-            version=version, name=terms_service.name, coverage_terms=terms_service.coverage_terms
+            version=version,
+            position=position,
+            name=terms_service.name,
+            coverage_terms=terms_service.coverage_terms,
+            service_channels=list(terms_service.service_channels),
+            limit_text=terms_service.limit_text,
         )
         service.full_clean()
         service.save()
@@ -205,6 +249,110 @@ def update_draft(*, actor: User, version_id: int, terms: DraftTerms) -> PlanVers
             scope_reference=str(version.plan.reseller_id),
         )
         return version
+
+
+def update_coverage_notes(*, actor: User, service_id: int, internal_notes: str) -> PlanService:
+    with _catalog_change(actor, PlanService(pk=service_id), "edit_coverage_notes"):
+        coverage = (
+            PlanService.objects.select_for_update()
+            .select_related("version__plan")
+            .filter(pk=service_id, version__plan__in=visible_plans(actor))
+            .first()
+        )
+        if coverage is None:
+            raise PermissionDenied
+        if (
+            not actor.is_superuser
+            and not catalog_resellers(actor).filter(pk=coverage.version.plan.reseller_id).exists()
+        ):
+            raise PermissionDenied
+        coverage.internal_notes = internal_notes
+        coverage.full_clean()
+        coverage.save(update_fields=["internal_notes"])
+        record_privileged_event(
+            actor,
+            "plan.coverage_notes_updated",
+            coverage,
+            {"fields": ["internal_notes"]},
+            scope_type="reseller",
+            scope_reference=str(coverage.version.plan.reseller_id),
+        )
+        return coverage
+
+
+def update_coverage_presentation(
+    *,
+    actor: User,
+    service_id: int,
+    presentation: CoveragePresentation,
+) -> PlanService:
+    with _catalog_change(actor, PlanService(pk=service_id), "edit_coverage_presentation"):
+        coverage = (
+            PlanService.objects.select_for_update()
+            .select_related("version__plan")
+            .filter(pk=service_id, version__plan__in=visible_plans(actor))
+            .first()
+        )
+        if coverage is None:
+            raise PermissionDenied
+        if (
+            not actor.is_superuser
+            and not catalog_resellers(actor).filter(pk=coverage.version.plan.reseller_id).exists()
+        ):
+            raise PermissionDenied
+        changed_fields = sorted(
+            field
+            for field, value in (
+                ("public_description", presentation.public_description),
+                ("marketing_text", presentation.marketing_text),
+                ("image_reference", presentation.image_reference),
+                ("presentation_visible", presentation.visible),
+            )
+            if getattr(coverage, field) != value
+        )
+        coverage.public_description = presentation.public_description
+        coverage.marketing_text = presentation.marketing_text
+        coverage.image_reference = presentation.image_reference
+        coverage.presentation_visible = presentation.visible
+        coverage.full_clean()
+        coverage.save(
+            update_fields=[
+                "public_description",
+                "marketing_text",
+                "image_reference",
+                "presentation_visible",
+            ]
+        )
+        record_privileged_event(
+            actor,
+            "plan.coverage_presentation_updated",
+            coverage,
+            {"fields": changed_fields, "visible": coverage.presentation_visible},
+            scope_type="reseller",
+            scope_reference=str(coverage.version.plan.reseller_id),
+        )
+        return coverage
+
+
+def member_coverage_contents(*, version_id: int) -> tuple[MemberCoverage, ...]:
+    contents = []
+    for coverage in PlanService.objects.filter(version_id=version_id):
+        presentation_visible = coverage.presentation_visible
+        contents.append(
+            MemberCoverage(
+                id=coverage.pk,
+                position=coverage.position,
+                name=coverage.name,
+                coverage_terms=coverage.coverage_terms,
+                service_channels=tuple(coverage.service_channels),
+                limit_text=coverage.limit_text,
+                presentation_visible=presentation_visible,
+                public_description=(coverage.public_description if presentation_visible else ""),
+                marketing_text=coverage.marketing_text if presentation_visible else "",
+                image_reference=coverage.image_reference if presentation_visible else "",
+            )
+        )
+    return tuple(contents)
 
 
 def publish_draft(*, actor: User, version_id: int) -> PlanVersion:
@@ -319,4 +467,69 @@ def resolve_available_plan_version(
         )
         .order_by("-number")
         .first()
+    )
+
+
+def coverage_for_servicing(
+    *,
+    actor: User,
+    business_id: int,
+    service_id: int,
+    on_date: date,
+) -> ServicingCoverage:
+    coverage = (
+        PlanService.objects.select_related("version__plan__provider").filter(pk=service_id).first()
+    )
+    if coverage is None:
+        raise PermissionDenied
+    business = Business.objects.filter(
+        pk=business_id,
+        reseller_id=coverage.version.plan.reseller_id,
+        is_active=True,
+        deleted_at__isnull=True,
+        reseller__is_active=True,
+        reseller__deleted_at__isnull=True,
+    ).first()
+    if business is None or not actor.is_active:
+        raise PermissionDenied
+    if (
+        not actor.is_superuser
+        and not ScopedAssignment.objects.filter(
+            user=actor,
+            role=ScopedAssignment.Role.PROVIDER_EMPLOYEE,
+            revoked_at__isnull=True,
+            provider_assignment__business=business,
+            provider_assignment__provider_id=coverage.version.plan.provider_id,
+            provider_assignment__is_active=True,
+            provider_assignment__deleted_at__isnull=True,
+            provider_assignment__provider__is_active=True,
+            provider_assignment__provider__deleted_at__isnull=True,
+        ).exists()
+    ):
+        raise PermissionDenied
+    eligible_version = resolve_available_plan_version(
+        business_id=business.pk,
+        plan_id=coverage.version.plan_id,
+        on_date=on_date,
+    )
+    if eligible_version is None or eligible_version.pk != coverage.version_id:
+        raise PermissionDenied
+    member_coverage = next(
+        item
+        for item in member_coverage_contents(version_id=coverage.version_id)
+        if item.id == coverage.pk
+    )
+    record_privileged_event(
+        actor,
+        "plan.coverage_servicing_viewed",
+        coverage,
+        {"business_id": business.pk},
+        scope_type="provider",
+        scope_reference=str(coverage.version.plan.provider_id),
+    )
+    return ServicingCoverage(
+        business_name=business.name,
+        provider_name=coverage.version.plan.provider.name,
+        coverage=member_coverage,
+        internal_notes=coverage.internal_notes,
     )
