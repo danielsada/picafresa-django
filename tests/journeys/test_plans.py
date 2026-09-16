@@ -68,6 +68,7 @@ class PlanJourneyTests(TestCase):
                 "reseller": self.reseller.pk,
                 "provider": self.provider.pk,
                 "name": "Plan Familiar",
+                "auto_renew_enabled": "on",
             },
             follow=True,
         )
@@ -75,6 +76,7 @@ class PlanJourneyTests(TestCase):
         plan_url = created.redirect_chain[0][0]
         self.assertContains(created, "Plan Familiar")
         self.assertContains(created, "Asistencia Norte")
+        self.assertContains(created, "Renovación automática: habilitada")
         draft = self.client.post(f"{plan_url}versiones/nueva/", self.draft_data, follow=True)
         self.assertEqual(len(draft.redirect_chain), 1)
         version_url = draft.redirect_chain[0][0]

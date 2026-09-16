@@ -40,5 +40,6 @@ urlpatterns = [
     path("cerrar-sesion/", account_views.logout_account, name="logout"),
     path("cartera/", include("organizations.urls")),
     path("planes/", include("catalog.urls")),
+    path("polizas/", include("enrollments.urls")),
     path("admin/", admin.site.urls),
 ]

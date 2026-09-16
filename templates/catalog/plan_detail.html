@@ -6,6 +6,7 @@
   <p>{{ provider_permanence }}</p>
   <h2>Disponibilidad</h2>
   <p>{{ plan.get_availability_display }}</p>
+  <p>Renovación automática: {% if plan.auto_renew_enabled %}habilitada{% else %}deshabilitada{% endif %}</p>
   {% if plan.availability == "selected_businesses" %}
     <ul>
       {% for business in plan.selected_businesses.all %}

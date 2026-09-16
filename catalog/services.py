@@ -107,6 +107,7 @@ def create_plan(
     name: str,
     internal_amount: Decimal | None = None,
     currency: str = "MXN",
+    auto_renew_enabled: bool = False,
 ) -> Plan:
     with _catalog_change(actor, Plan(), "create_plan"):
         reseller = catalog_resellers(actor).filter(pk=reseller_id).first()
@@ -125,6 +126,7 @@ def create_plan(
             name=name,
             internal_amount=internal_amount,
             currency=currency,
+            auto_renew_enabled=auto_renew_enabled,
         )
         plan.full_clean()
         plan.save()
@@ -158,6 +160,7 @@ def update_plan(
     provider_id: int,
     internal_amount: Decimal | None = None,
     currency: str | None = None,
+    auto_renew_enabled: bool | None = None,
 ) -> Plan:
     with _catalog_change(actor, Plan(pk=plan_id), "edit_plan"):
         plan = _editable_plan(actor, plan_id)
@@ -166,11 +169,20 @@ def update_plan(
         if not actor.is_superuser and (internal_amount is not None or currency is not None):
             raise PermissionDenied
         plan.name = name
+        if auto_renew_enabled is not None:
+            plan.auto_renew_enabled = auto_renew_enabled
         if actor.is_superuser:
             plan.internal_amount = internal_amount
             plan.currency = currency or "MXN"
         plan.full_clean()
-        plan.save(update_fields=["name", "internal_amount", "currency"])
+        plan.save(
+            update_fields=[
+                "name",
+                "internal_amount",
+                "currency",
+                "auto_renew_enabled",
+            ]
+        )
         record_privileged_event(
             actor,
             "plan.updated",

@@ -170,6 +170,7 @@ def plan_edit(request: HttpRequest, plan_id: int | None = None) -> HttpResponse:
                     name=form.cleaned_data["name"],
                     internal_amount=form.cleaned_data.get("internal_amount"),
                     currency=form.cleaned_data.get("currency", "MXN"),
+                    auto_renew_enabled=form.cleaned_data["auto_renew_enabled"],
                 )
             else:
                 plan = update_plan(
@@ -179,6 +180,7 @@ def plan_edit(request: HttpRequest, plan_id: int | None = None) -> HttpResponse:
                     name=form.cleaned_data["name"],
                     internal_amount=form.cleaned_data.get("internal_amount"),
                     currency=form.cleaned_data.get("currency"),
+                    auto_renew_enabled=form.cleaned_data["auto_renew_enabled"],
                 )
         except ValidationError as error:
             form.add_error(None, ValidationError(error.messages))

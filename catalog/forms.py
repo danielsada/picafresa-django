@@ -18,6 +18,10 @@ from .services import DraftTerms, ServiceTerms
 
 class PlanForm(forms.Form):
     name = forms.CharField(label="Nombre del Plan", max_length=200)
+    auto_renew_enabled = forms.BooleanField(
+        label="Habilitar renovación automática",
+        required=False,
+    )
     reseller = forms.ModelChoiceField(label="Revendedor", queryset=Reseller.objects.none())
     provider = forms.ModelChoiceField(
         label="Proveedor permanente",
@@ -44,7 +48,10 @@ class PlanForm(forms.Form):
         if plan is not None:
             del self.fields["reseller"]
             del self.fields["provider"]
-            self.initial.update(name=plan.name)
+            self.initial.update(
+                name=plan.name,
+                auto_renew_enabled=plan.auto_renew_enabled,
+            )
             if actor.is_superuser:
                 self.initial.update(internal_amount=plan.internal_amount, currency=plan.currency)
         if not actor.is_superuser:

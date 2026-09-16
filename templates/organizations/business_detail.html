@@ -7,6 +7,29 @@
   <p>{{ business.reseller.name }}</p>
   <p>Zona horaria: {{ business.timezone }}</p>
   <p><a href="{% url 'organizations:business-edit' business.pk %}">Editar empresa</a></p>
+  <h2>Pólizas</h2>
+  <p><a href="{% url 'organizations:enrollment-create' business.pk %}">Crear Póliza</a></p>
+  <ul class="portfolio-list">
+    {% for enrollment in enrollment_page %}
+      <li>
+        <a href="{% url 'enrollments:detail' enrollment.pk %}">{{ enrollment.member.full_name }}</a>
+        — {{ enrollment.plan_name }} — {{ enrollment.get_status_display }}
+      </li>
+    {% empty %}
+      <li>No hay Pólizas para esta empresa.</li>
+    {% endfor %}
+  </ul>
+  {% if enrollment_page.has_other_pages %}
+    <nav aria-label="Páginas de Pólizas">
+      {% if enrollment_page.has_previous %}
+        <a href="?polizas_page={{ enrollment_page.previous_page_number }}">Pólizas anteriores</a>
+      {% endif %}
+      <span>Página {{ enrollment_page.number }} de {{ enrollment_page.paginator.num_pages }}</span>
+      {% if enrollment_page.has_next %}
+        <a href="?polizas_page={{ enrollment_page.next_page_number }}">Más Pólizas</a>
+      {% endif %}
+    </nav>
+  {% endif %}
   <h2>Proveedores de la empresa</h2>
   <p><a href="{% url 'organizations:provider-contract-create' business.pk %}">Crear contrato con Proveedor</a></p>
   <ul class="portfolio-list">

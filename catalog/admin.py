@@ -52,6 +52,7 @@ class PlanAdmin(CatalogReadOnlyAdmin):
         "reseller",
         "provider",
         "availability",
+        "auto_renew_enabled",
         "internal_amount",
         "currency",
     )

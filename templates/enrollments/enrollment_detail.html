@@ -1,0 +1,38 @@
+{% extends "organizations/base.html" %}
+
+{% block title %}Póliza de {{ enrollment.member.full_name }}{% endblock %}
+
+{% block portfolio_content %}
+  <h1 id="page-title" tabindex="-1">Póliza de {{ enrollment.member.full_name }}</h1>
+  <p>{{ enrollment.business.name }} — {{ enrollment.business.timezone }}</p>
+  <dl>
+    <dt>Plan</dt><dd>{{ enrollment.plan_name }} — versión {{ enrollment.plan_version.number }}</dd>
+    <dt>Estado</dt><dd>{{ enrollment.get_status_display }}</dd>
+    <dt>Inicio</dt><dd>{{ enrollment.start_date|date:"j \d\e F \d\e Y" }}</dd>
+    <dt>Fin de cobertura</dt><dd>{{ enrollment.end_date|date:"j \d\e F \d\e Y" }} (exclusivo)</dd>
+    <dt>Duración</dt><dd>{{ enrollment.duration_months }} meses calendario</dd>
+    <dt>Proveedor</dt><dd>{{ enrollment.provider_name }}</dd>
+    <dt>Contacto</dt><dd>{{ enrollment.provider_contact_name|default:"Sin registrar" }}</dd>
+    <dt>Correo</dt><dd>{{ enrollment.provider_contact_email|default:"Sin registrar" }}</dd>
+    <dt>Teléfono</dt><dd>{{ enrollment.provider_contact_phone|default:"Sin registrar" }}</dd>
+    <dt>Instrucciones</dt><dd>{{ enrollment.provider_service_instructions|default:"Sin registrar"|linebreaksbr }}</dd>
+    {% if enrollment.preceding_enrollment %}
+      <dt>Póliza anterior</dt>
+      <dd><a href="{% url 'enrollments:detail' enrollment.preceding_enrollment.pk %}">Ver término anterior</a></dd>
+    {% endif %}
+  </dl>
+  {% if transition_form.fields.status.choices %}
+    <form method="post" action="{% url 'enrollments:transition' enrollment.pk %}">
+      {% csrf_token %}
+      {{ transition_form.as_div }}
+      <button type="submit">Cambiar estado</button>
+    </form>
+  {% endif %}
+  {% if not enrollment.preceding_enrollment and not enrollment.renewal %}
+    <form method="post" action="{% url 'enrollments:renew' enrollment.pk %}">
+      {% csrf_token %}
+      <button type="submit">Renovar Póliza</button>
+    </form>
+  {% endif %}
+  <p><a href="{% url 'organizations:business-detail' enrollment.business.pk %}">Volver a {{ enrollment.business.name }}</a></p>
+{% endblock %}

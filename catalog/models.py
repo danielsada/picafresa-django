@@ -76,6 +76,7 @@ class Plan(models.Model):
         choices=Availability,
         default=Availability.ALL_BUSINESSES,
     )
+    auto_renew_enabled = models.BooleanField("renovación automática habilitada", default=False)
     selected_businesses = models.ManyToManyField(
         Business,
         through="PlanBusinessAvailability",

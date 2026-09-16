@@ -10,6 +10,7 @@ from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_http_methods, require_POST, require_safe
 
 from accounts.models import User
+from enrollments.models import PlanEnrollment
 
 from .forms import PortfolioBusinessForm, PortfolioProviderForm, ProviderContractForm
 from .selectors import (
@@ -49,8 +50,18 @@ def business_detail(request: HttpRequest, business_id: int) -> HttpResponse:
         .order_by("provider__name", "pk")
     )
     page = Paginator(relationships, 20).get_page(request.GET.get("page"))
+    enrollments = PlanEnrollment.objects.select_related("member", "plan_version__plan").filter(
+        business=business
+    )
+    enrollment_page = Paginator(enrollments, 20).get_page(request.GET.get("polizas_page"))
     return render(
-        request, "organizations/business_detail.html", {"business": business, "page": page}
+        request,
+        "organizations/business_detail.html",
+        {
+            "business": business,
+            "page": page,
+            "enrollment_page": enrollment_page,
+        },
     )
 
 

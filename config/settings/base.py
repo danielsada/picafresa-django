@@ -13,6 +13,7 @@ INSTALLED_APPS = [
     "audit",
     "organizations",
     "catalog",
+    "enrollments",
 ]
 
 MIDDLEWARE = [
@@ -78,3 +79,4 @@ AUTHENTICATION_BACKENDS = ["accounts.backends.IdentifierBackend"]
 LOGIN_REDIRECT_URL = "account-home"
 LOGOUT_REDIRECT_URL = "/"
 DEFAULT_FROM_EMAIL = "cuentas@picafresa.mx"
+RENEWAL_LEAD_DAYS = 7

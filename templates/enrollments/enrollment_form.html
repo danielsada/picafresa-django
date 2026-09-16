@@ -1,0 +1,12 @@
+{% extends "organizations/base.html" %}
+
+{% block title %}Nueva Póliza | {{ business.name }}{% endblock %}
+
+{% block portfolio_content %}
+  <h1 id="page-title" tabindex="-1">Nueva Póliza para {{ business.name }}</h1>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_div }}
+    <button type="submit">Crear Póliza</button>
+  </form>
+{% endblock %}
