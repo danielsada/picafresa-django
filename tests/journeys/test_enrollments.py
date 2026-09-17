@@ -222,6 +222,15 @@ class EnrollmentJourneyTests(TestCase):
             {"status": PlanEnrollment.Status.ACTIVE},
         )
         self.client.post(
+            f"{second_url}beneficiarios/nuevo/",
+            {
+                "full_name": "Sofía Ejemplo",
+                "relationship": "Hija",
+                "country_code": "MX",
+                "gender": Beneficiary.Gender.FEMALE,
+            },
+        )
+        self.client.post(
             f"/cartera/empresas/{self.business.pk}/polizas/nueva/",
             {
                 "member": other_member.pk,
@@ -251,6 +260,8 @@ class EnrollmentJourneyTests(TestCase):
         self.assertContains(activated, "Plan Familiar", count=2)
         self.assertContains(activated, "Activa")
         self.assertContains(activated, "Cancelada")
+        self.assertContains(activated, "Sofía Ejemplo")
+        self.assertContains(activated, "Hija")
         self.assertNotContains(activated, "Otro Afiliado")
         self.member.refresh_from_db()
         self.assertEqual(self.member.account_id, int(self.client.session["_auth_user_id"]))

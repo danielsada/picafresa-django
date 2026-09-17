@@ -20,6 +20,14 @@
             {{ enrollment.plan_name }} — {{ enrollment.get_status_display }}
             ({{ enrollment.start_date|date:"j \d\e F \d\e Y" }} a
             {{ enrollment.end_date|date:"j \d\e F \d\e Y" }} exclusivo)
+            <h3>Beneficiarios</h3>
+            <ul>
+              {% for beneficiary in enrollment.beneficiaries.all %}
+                <li>{{ beneficiary.full_name }} — {{ beneficiary.relationship }}</li>
+              {% empty %}
+                <li>No hay beneficiarios registrados.</li>
+              {% endfor %}
+            </ul>
           </li>
         {% endfor %}
       </ul>
