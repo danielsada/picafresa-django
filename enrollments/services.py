@@ -7,13 +7,14 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 
 from accounts.models import User
+from accounts.services import issue_activation
 from audit.services import record_privileged_event
 from catalog.models import Plan, PlanVersion
 from catalog.services import resolve_available_plan_version
 from organizations.models import ProviderAssignment
 from organizations.selectors import administered_businesses
 
-from .models import Member, PlanEnrollment
+from .models import Beneficiary, Member, PlanEnrollment
 
 
 @dataclass(frozen=True)
@@ -25,6 +26,19 @@ class EnrollmentTerms:
     override_reason: str = ""
     allow_eligibility_override: bool = False
     preceding_enrollment_id: int | None = None
+
+
+@dataclass(frozen=True)
+class BeneficiaryDetails:
+    full_name: str
+    relationship: str
+    date_of_birth: date | None
+    country_code: str
+    gender: str
+    email: str = ""
+    phone: str = ""
+    attribution_source: str = ""
+    do_not_contact: bool = False
 
 
 ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
@@ -69,12 +83,55 @@ def _administered_member(actor: User, member_id: int) -> Member:
     else:
         member = (
             Member.objects.select_related("business__reseller")
-            .filter(pk=member_id, business__in=businesses)
+            .filter(pk=member_id, business__in=businesses, deleted_at__isnull=True)
             .first()
         )
     if member is None:
         raise PermissionDenied
     return member
+
+
+def _administered_enrollment(actor: User, enrollment_id: int) -> PlanEnrollment:
+    enrollment = (
+        PlanEnrollment.objects.select_related("member", "business").filter(pk=enrollment_id).first()
+    )
+    if enrollment is None:
+        raise PermissionDenied
+    _administered_member(actor, enrollment.member_id)
+    return enrollment
+
+
+@transaction.atomic
+def add_beneficiary(
+    *,
+    actor: User,
+    enrollment_id: int,
+    details: BeneficiaryDetails,
+) -> Beneficiary:
+    enrollment = _administered_enrollment(actor, enrollment_id)
+    beneficiary = Beneficiary(
+        enrollment=enrollment,
+        full_name=details.full_name.strip(),
+        relationship=details.relationship.strip(),
+        date_of_birth=details.date_of_birth,
+        country_code=details.country_code.strip().upper(),
+        gender=details.gender,
+        email=details.email.strip().casefold(),
+        phone=details.phone.strip(),
+        attribution_source=details.attribution_source.strip(),
+        do_not_contact=details.do_not_contact,
+    )
+    beneficiary.full_clean()
+    beneficiary.save()
+    record_privileged_event(
+        actor,
+        "enrollment.beneficiary_added",
+        beneficiary,
+        {"enrollment_id": enrollment.pk},
+        scope_type="business",
+        scope_reference=str(enrollment.business_id),
+    )
+    return beneficiary
 
 
 def _version_for_terms(actor: User, member: Member, terms: EnrollmentTerms) -> PlanVersion:
@@ -254,6 +311,56 @@ def renew_enrollment(*, actor: User, enrollment_id: int) -> PlanEnrollment:
 
 class RenewalGenerationUnavailable(RuntimeError):
     pass
+
+
+class IdentityReviewRequired(ValidationError):
+    pass
+
+
+@transaction.atomic
+def invite_member(*, actor: User, member_id: int) -> User:
+    member = _administered_member(actor, member_id)
+    normalized_email = User.normalize_email(member.email)
+    if not normalized_email:
+        raise ValidationError(
+            "El Afiliado necesita un correo electrónico para recibir la invitación."
+        )
+    if member.deleted_at is not None or (
+        Member.objects.filter(
+            email=normalized_email,
+            deleted_at__isnull=False,
+        )
+        .exclude(pk=member.pk)
+        .exists()
+    ):
+        raise IdentityReviewRequired(
+            "Existe una identidad eliminada que requiere revisión explícita."
+        )
+    if member.account_id is not None:
+        raise ValidationError("El Afiliado ya tiene una cuenta vinculada.")
+    account = User.objects.filter(email=normalized_email).first()
+    account_created = account is None
+    if account is not None and hasattr(account, "member"):
+        raise ValidationError("El correo ya pertenece a otro Afiliado.")
+    if account is not None and account.is_active != (account.email_verified_at is not None):
+        raise IdentityReviewRequired(
+            "La cuenta existente requiere revisión explícita antes de vincularla."
+        )
+    if account is None:
+        account = User.objects.create_user(email=normalized_email, is_active=False)
+    member.account = account
+    member.save(update_fields=["account"])
+    if not account.is_active:
+        issue_activation(account)
+    record_privileged_event(
+        actor,
+        "member.invited",
+        member,
+        {"account_created": account_created},
+        scope_type="business",
+        scope_reference=str(member.business_id),
+    )
+    return account
 
 
 class RenewalGenerator(Protocol):

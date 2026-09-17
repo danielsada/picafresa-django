@@ -4,7 +4,7 @@ from django.contrib import admin
 from django.core.exceptions import PermissionDenied
 from django.http import HttpRequest, HttpResponse
 
-from .models import Member, PlanEnrollment
+from .models import Beneficiary, Member, PlanEnrollment
 
 
 class EnrollmentReadOnlyAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
@@ -16,21 +16,21 @@ class EnrollmentReadOnlyAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
     def has_change_permission(
         self,
         request: HttpRequest,
-        obj: Member | PlanEnrollment | None = None,
+        obj: Beneficiary | Member | PlanEnrollment | None = None,
     ) -> bool:
         return False
 
     def has_delete_permission(
         self,
         request: HttpRequest,
-        obj: Member | PlanEnrollment | None = None,
+        obj: Beneficiary | Member | PlanEnrollment | None = None,
     ) -> bool:
         return False
 
     def get_readonly_fields(
         self,
         request: HttpRequest,
-        obj: Member | PlanEnrollment | None = None,
+        obj: Beneficiary | Member | PlanEnrollment | None = None,
     ) -> tuple[str, ...]:
         del request, obj
         return tuple(field.name for field in self.model._meta.fields)
@@ -72,3 +72,11 @@ class PlanEnrollmentAdmin(EnrollmentReadOnlyAdmin):
     @admin.display(description="Plan", ordering="plan_version__plan__name")
     def plan_name(self, enrollment: PlanEnrollment) -> str:
         return enrollment.plan_name
+
+
+@admin.register(Beneficiary)
+class BeneficiaryAdmin(EnrollmentReadOnlyAdmin):
+    list_display = ("full_name", "relationship", "enrollment", "country_code", "created_at")
+    list_filter = ("country_code", "gender", "do_not_contact")
+    search_fields = ("full_name", "relationship", "enrollment__member__full_name")
+    list_select_related = ("enrollment__member",)

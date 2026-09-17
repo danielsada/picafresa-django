@@ -11,14 +11,40 @@ from organizations.models import Business
 
 
 class Member(models.Model):
+    class Gender(models.TextChoices):
+        FEMALE = "female", "Mujer"
+        MALE = "male", "Hombre"
+        NON_BINARY = "non_binary", "No binario"
+        UNSPECIFIED = "unspecified", "No especificado"
+
     business = models.ForeignKey(
         Business,
         on_delete=models.PROTECT,
         related_name="members",
         verbose_name="empresa",
     )
+    account = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="member",
+        verbose_name="cuenta",
+        null=True,
+        blank=True,
+    )
     full_name = models.CharField("nombre completo", max_length=250)
+    country_code = models.CharField("país", max_length=2, default="MX")
+    gender = models.CharField(
+        "género",
+        max_length=20,
+        choices=Gender,
+        default=Gender.UNSPECIFIED,
+    )
+    email = models.EmailField("correo electrónico", blank=True, db_index=True)
+    phone = models.CharField("teléfono", max_length=50, blank=True)
+    attribution_source = models.CharField("fuente de atribución", max_length=200, blank=True)
+    do_not_contact = models.BooleanField("no contactar", default=False)
     auto_renew_allowed = models.BooleanField("permite renovación automática", default=True)
+    deleted_at = models.DateTimeField("eliminado el", null=True, blank=True)
     created_at = models.DateTimeField("creado el", auto_now_add=True)
 
     class Meta:
@@ -28,6 +54,11 @@ class Member(models.Model):
 
     def __str__(self) -> str:
         return self.full_name
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        self.country_code = self.country_code.strip().upper()
+        self.email = self.email.strip().casefold()
+        super().save(*args, **kwargs)
 
 
 class PlanEnrollment(models.Model):
@@ -145,4 +176,53 @@ class PlanEnrollment(models.Model):
         super().save(*args, **kwargs)
 
 
-# Create your models here.
+class Beneficiary(models.Model):
+    class Gender(models.TextChoices):
+        FEMALE = "female", "Mujer"
+        MALE = "male", "Hombre"
+        NON_BINARY = "non_binary", "No binario"
+        UNSPECIFIED = "unspecified", "No especificado"
+
+    enrollment = models.ForeignKey(
+        PlanEnrollment,
+        on_delete=models.PROTECT,
+        related_name="beneficiaries",
+        verbose_name="Póliza",
+    )
+    full_name = models.CharField("nombre completo", max_length=250)
+    relationship = models.CharField("parentesco o relación", max_length=100)
+    date_of_birth = models.DateField("fecha de nacimiento", null=True, blank=True)
+    country_code = models.CharField("país", max_length=2, default="MX")
+    gender = models.CharField(
+        "género",
+        max_length=20,
+        choices=Gender,
+        default=Gender.UNSPECIFIED,
+    )
+    email = models.EmailField("correo electrónico", blank=True)
+    phone = models.CharField("teléfono", max_length=50, blank=True)
+    attribution_source = models.CharField("fuente de atribución", max_length=200, blank=True)
+    do_not_contact = models.BooleanField("no contactar", default=False)
+    created_at = models.DateTimeField("creado el", auto_now_add=True)
+
+    class Meta:
+        ordering = ("full_name", "pk")
+        verbose_name = "Beneficiario"
+        verbose_name_plural = "Beneficiarios"
+
+    def __str__(self) -> str:
+        return self.full_name
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        if self.pk:
+            enrollment_id = (
+                type(self)
+                .objects.filter(pk=self.pk)
+                .values_list("enrollment_id", flat=True)
+                .first()
+            )
+            if enrollment_id is not None and enrollment_id != self.enrollment_id:
+                raise ValidationError("La Póliza de un Beneficiario es inmutable.")
+        self.country_code = self.country_code.strip().upper()
+        self.email = self.email.strip().casefold()
+        super().save(*args, **kwargs)

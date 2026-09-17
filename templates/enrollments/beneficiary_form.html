@@ -1,0 +1,14 @@
+{% extends "organizations/base.html" %}
+
+{% block title %}Agregar beneficiario | Picafresa{% endblock %}
+
+{% block portfolio_content %}
+  <h1 id="page-title" tabindex="-1">Agregar beneficiario</h1>
+  <p>Póliza de {{ enrollment.member.full_name }}</p>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_div }}
+    <button type="submit">Agregar beneficiario</button>
+  </form>
+  <p><a href="{% url 'enrollments:detail' enrollment.pk %}">Volver a la Póliza</a></p>
+{% endblock %}

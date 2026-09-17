@@ -9,6 +9,7 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 
+from enrollments.selectors import member_enrollments
 from organizations.selectors import administered_resellers
 
 from .forms import (
@@ -68,10 +69,14 @@ def activate(request: HttpRequest) -> HttpResponse:
 
 @login_required
 def home(request: HttpRequest) -> HttpResponse:
+    user = cast(User, request.user)
     return render(
         request,
         "accounts/home.html",
-        {"has_portfolio": administered_resellers(cast(User, request.user)).exists()},
+        {
+            "has_portfolio": administered_resellers(user).exists(),
+            "member_enrollments": member_enrollments(user),
+        },
     )
 
 

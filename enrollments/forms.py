@@ -5,7 +5,7 @@ from django import forms
 from catalog.models import Plan
 from organizations.models import Business
 
-from .models import Member, PlanEnrollment
+from .models import Beneficiary, Member, PlanEnrollment
 from .services import ALLOWED_TRANSITIONS
 
 
@@ -48,3 +48,20 @@ class EnrollmentTransitionForm(forms.Form):
         status_field.choices = [
             (status, labels[status]) for status in ALLOWED_TRANSITIONS[enrollment.status]
         ]
+
+
+class BeneficiaryForm(forms.ModelForm):  # type: ignore[type-arg]
+    class Meta:
+        model = Beneficiary
+        fields = (
+            "full_name",
+            "relationship",
+            "date_of_birth",
+            "country_code",
+            "gender",
+            "email",
+            "phone",
+            "attribution_source",
+            "do_not_contact",
+        )
+        widgets = {"date_of_birth": forms.DateInput(attrs={"type": "date"})}

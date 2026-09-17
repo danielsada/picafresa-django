@@ -61,6 +61,14 @@ ticket 09. Pricing, government identifiers, and raw audit data are not exposed i
 Pages use labeled server-rendered forms, keyboard navigation, and a responsive layout without
 requiring JavaScript.
 
+Reseller administrators can record beneficiaries on a specific Póliza and invite only its primary
+Afiliado at the verified email stored on the Member record. Beneficiaries never receive accounts.
+The account link resolves every active and historical term for that one Member, while beneficiary
+creation, inspection, and invitation remain tenant-scoped. Country, gender, contact, attribution,
+and do-not-contact fields are retained without copying those values into audit payloads. A matching
+soft-deleted Member blocks invitation for explicit identity review instead of being restored or
+duplicated automatically.
+
 ## Draft and publish Plans
 
 `/planes/` is available from the reseller portfolio, **Mi cuenta**, and the read-only catalog

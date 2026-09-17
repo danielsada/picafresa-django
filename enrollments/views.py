@@ -12,18 +12,30 @@ from django.views.decorators.http import require_http_methods, require_POST, req
 from accounts.models import User
 from organizations.selectors import administered_businesses
 
-from .forms import EnrollmentCreateForm, EnrollmentTransitionForm
+from .forms import BeneficiaryForm, EnrollmentCreateForm, EnrollmentTransitionForm
 from .models import PlanEnrollment
-from .services import EnrollmentTerms, create_enrollment, renew_enrollment, transition_enrollment
+from .services import (
+    BeneficiaryDetails,
+    EnrollmentTerms,
+    add_beneficiary,
+    create_enrollment,
+    invite_member,
+    renew_enrollment,
+    transition_enrollment,
+)
 
 
 def _administered_enrollments(actor: User) -> QuerySet[PlanEnrollment]:
-    return PlanEnrollment.objects.select_related(
-        "member",
-        "business",
-        "plan_version__plan__provider",
-        "preceding_enrollment",
-    ).filter(business__in=administered_businesses(actor))
+    return (
+        PlanEnrollment.objects.select_related(
+            "member",
+            "business",
+            "plan_version__plan__provider",
+            "preceding_enrollment",
+        )
+        .prefetch_related("beneficiaries")
+        .filter(business__in=administered_businesses(actor))
+    )
 
 
 @login_required(login_url="landing")
@@ -73,6 +85,53 @@ def enrollment_detail(request: HttpRequest, enrollment_id: int) -> HttpResponse:
         "enrollments/enrollment_detail.html",
         {"enrollment": enrollment, "transition_form": transition_form},
     )
+
+
+@login_required(login_url="landing")
+@never_cache
+@require_http_methods(["GET", "POST"])
+def beneficiary_create(request: HttpRequest, enrollment_id: int) -> HttpResponse:
+    actor = cast(User, request.user)
+    enrollment = get_object_or_404(_administered_enrollments(actor), pk=enrollment_id)
+    form = BeneficiaryForm(request.POST if request.method == "POST" else None)
+    if request.method == "POST" and form.is_valid():
+        add_beneficiary(
+            actor=actor,
+            enrollment_id=enrollment.pk,
+            details=BeneficiaryDetails(
+                full_name=form.cleaned_data["full_name"],
+                relationship=form.cleaned_data["relationship"],
+                date_of_birth=form.cleaned_data["date_of_birth"],
+                country_code=form.cleaned_data["country_code"],
+                gender=form.cleaned_data["gender"],
+                email=form.cleaned_data["email"],
+                phone=form.cleaned_data["phone"],
+                attribution_source=form.cleaned_data["attribution_source"],
+                do_not_contact=form.cleaned_data["do_not_contact"],
+            ),
+        )
+        messages.success(request, "Beneficiario agregado.")
+        return redirect("enrollments:detail", enrollment_id=enrollment.pk)
+    return render(
+        request,
+        "enrollments/beneficiary_form.html",
+        {"enrollment": enrollment, "form": form},
+    )
+
+
+@login_required(login_url="landing")
+@never_cache
+@require_POST
+def member_invite(request: HttpRequest, enrollment_id: int) -> HttpResponse:
+    actor = cast(User, request.user)
+    enrollment = get_object_or_404(_administered_enrollments(actor), pk=enrollment_id)
+    try:
+        invite_member(actor=actor, member_id=enrollment.member_id)
+    except ValidationError as error:
+        messages.error(request, " ".join(error.messages))
+    else:
+        messages.success(request, "Invitación enviada.")
+    return redirect("enrollments:detail", enrollment_id=enrollment.pk)
 
 
 @login_required(login_url="landing")

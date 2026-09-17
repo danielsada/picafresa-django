@@ -12,6 +12,18 @@
     {% if has_portfolio or user.is_superuser %}
       <p><a href="{% url 'catalog:plan-list' %}">Planes</a></p>
     {% endif %}
+    {% if member_enrollments %}
+      <h2>Mis Pólizas</h2>
+      <ul>
+        {% for enrollment in member_enrollments %}
+          <li>
+            {{ enrollment.plan_name }} — {{ enrollment.get_status_display }}
+            ({{ enrollment.start_date|date:"j \d\e F \d\e Y" }} a
+            {{ enrollment.end_date|date:"j \d\e F \d\e Y" }} exclusivo)
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
     <p><a href="{% url 'email-change' %}">Cambiar correo electrónico</a></p>
   </section>
 {% endblock %}

@@ -21,6 +21,33 @@
       <dd><a href="{% url 'enrollments:detail' enrollment.preceding_enrollment.pk %}">Ver término anterior</a></dd>
     {% endif %}
   </dl>
+  {% if not enrollment.member.account_id %}
+    <form method="post" action="{% url 'enrollments:member-invite' enrollment.pk %}">
+      {% csrf_token %}
+      <button type="submit">Invitar al Afiliado</button>
+    </form>
+  {% endif %}
+  <h2>Beneficiarios</h2>
+  <p><a href="{% url 'enrollments:beneficiary-create' enrollment.pk %}">Agregar beneficiario</a></p>
+  <ul>
+    {% for beneficiary in enrollment.beneficiaries.all %}
+      <li>
+        <strong>{{ beneficiary.full_name }}</strong> — {{ beneficiary.relationship }}
+        <dl>
+          <dt>Fecha de nacimiento</dt><dd>{{ beneficiary.date_of_birth|date:"j \d\e F \d\e Y"|default:"Sin registrar" }}</dd>
+          <dt>País</dt><dd>{{ beneficiary.country_code }}</dd>
+          <dt>Género</dt><dd>{{ beneficiary.get_gender_display }}</dd>
+          <dt>Correo</dt><dd>{{ beneficiary.email|default:"Sin registrar" }}</dd>
+          <dt>Teléfono</dt><dd>{{ beneficiary.phone|default:"Sin registrar" }}</dd>
+          <dt>Atribución</dt><dd>{{ beneficiary.attribution_source|default:"Sin registrar" }}</dd>
+          <dt>Preferencia de contacto</dt>
+          <dd>{% if beneficiary.do_not_contact %}No contactar{% else %}Contacto permitido{% endif %}</dd>
+        </dl>
+      </li>
+    {% empty %}
+      <li>No hay beneficiarios registrados.</li>
+    {% endfor %}
+  </ul>
   {% if transition_form.fields.status.choices %}
     <form method="post" action="{% url 'enrollments:transition' enrollment.pk %}">
       {% csrf_token %}

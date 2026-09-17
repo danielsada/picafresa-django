@@ -8,12 +8,16 @@ from django.utils import timezone
 from accounts.models import User
 from audit.models import AuditEvent
 from catalog.services import DraftTerms, ServiceTerms, create_draft, create_plan, publish_draft
-from enrollments.models import Member, PlanEnrollment
+from enrollments.models import Beneficiary, Member, PlanEnrollment
 from enrollments.services import (
+    BeneficiaryDetails,
     EnrollmentTerms,
+    IdentityReviewRequired,
     RenewalGenerationUnavailable,
     UnavailableRenewalGenerator,
+    add_beneficiary,
     create_enrollment,
+    invite_member,
     is_renewal_eligible,
     renew_enrollment,
     transition_enrollment,
@@ -266,3 +270,92 @@ class EnrollmentServiceTests(TestCase):
     def test_automatic_renewal_generator_fails_explicitly_while_unavailable(self) -> None:
         with self.assertRaisesMessage(RenewalGenerationUnavailable, "no existe"):
             UnavailableRenewalGenerator().generate_due_renewals(as_of=date(2027, 1, 1))
+
+    def test_beneficiary_creation_cannot_cross_tenant_scope(self) -> None:
+        self.publish_version()
+        enrollment = create_enrollment(
+            actor=self.author,
+            terms=EnrollmentTerms(
+                member_id=self.member.pk,
+                plan_id=self.plan.pk,
+                start_date=date(2027, 1, 1),
+            ),
+        )
+        other_reseller = Reseller.objects.create(name="Socio Ajeno")
+        other_admin = User.objects.create_user(email="other-admin@example.test")
+        create_reseller_scope(user=other_admin, reseller=other_reseller)
+
+        with self.assertRaises(PermissionDenied):
+            add_beneficiary(
+                actor=other_admin,
+                enrollment_id=enrollment.pk,
+                details=BeneficiaryDetails(
+                    full_name="Persona Protegida",
+                    relationship="Hija",
+                    date_of_birth=date(2015, 4, 3),
+                    country_code="MX",
+                    gender=Beneficiary.Gender.FEMALE,
+                    email="private-beneficiary@example.test",
+                    phone="+52 55 2222",
+                    attribution_source="Registro administrativo",
+                    do_not_contact=True,
+                ),
+            )
+
+        self.assertFalse(Beneficiary.objects.exists())
+
+    def test_soft_deleted_member_identity_requires_explicit_review_before_invitation(self) -> None:
+        self.member.email = "returning@example.test"
+        self.member.save(update_fields=["email"])
+        deleted_member = Member.objects.create(
+            business=self.business,
+            full_name="Identidad anterior",
+            email="returning@example.test",
+            deleted_at=timezone.now(),
+        )
+
+        with self.assertRaises(IdentityReviewRequired):
+            invite_member(actor=self.author, member_id=self.member.pk)
+
+        self.member.refresh_from_db()
+        deleted_member.refresh_from_db()
+        self.assertIsNone(self.member.account_id)
+        self.assertIsNotNone(deleted_member.deleted_at)
+        self.assertFalse(User.objects.filter(email="returning@example.test").exists())
+        self.assertFalse(AuditEvent.objects.filter(action="member.invited").exists())
+
+    def test_beneficiary_cannot_be_moved_to_another_enrollment(self) -> None:
+        self.publish_version()
+        first = create_enrollment(
+            actor=self.author,
+            terms=EnrollmentTerms(
+                member_id=self.member.pk,
+                plan_id=self.plan.pk,
+                start_date=date(2027, 1, 1),
+            ),
+        )
+        second = create_enrollment(
+            actor=self.author,
+            terms=EnrollmentTerms(
+                member_id=self.member.pk,
+                plan_id=self.plan.pk,
+                start_date=date(2027, 2, 1),
+            ),
+        )
+        beneficiary = add_beneficiary(
+            actor=self.author,
+            enrollment_id=first.pk,
+            details=BeneficiaryDetails(
+                full_name="Persona Protegida",
+                relationship="Hija",
+                date_of_birth=None,
+                country_code="MX",
+                gender=Beneficiary.Gender.UNSPECIFIED,
+            ),
+        )
+
+        beneficiary.enrollment = second
+        with self.assertRaisesMessage(ValidationError, "Póliza"):
+            beneficiary.save()
+        with self.assertRaises(DatabaseError), transaction.atomic():
+            Beneficiary.objects.filter(pk=beneficiary.pk).update(enrollment=second)
